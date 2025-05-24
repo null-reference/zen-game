@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Gyro Collision Game</title>
+  <title>Gyro Collision Bounce</title>
   <style>
     html, body {
       margin: 0;
@@ -42,7 +42,6 @@ let targetTiltY = 0;
 let tiltX = 0;
 let tiltY = 0;
 
-// iOS permission handling
 function enableMotion() {
   if (typeof DeviceOrientationEvent.requestPermission === "function") {
     DeviceOrientationEvent.requestPermission().then(response => {
@@ -67,11 +66,8 @@ function handleTilt(e) {
 let player = {
   x: canvas.width / 2,
   y: canvas.height / 2,
-  radius: 12,
-  baseRadius: 12,
-  color: "white",
-  collided: false,
-  collisionTimer: 0
+  radius: 14,
+  color: "white"
 };
 
 let obstacles = Array.from({ length: 20 }).map(() => ({
@@ -80,7 +76,7 @@ let obstacles = Array.from({ length: 20 }).map(() => ({
   r: 10 + Math.random() * 10,
   dx: -1 + Math.random() * 2,
   dy: -1 + Math.random() * 2,
-  color: `hsl(${Math.random() * 360}, 80%, 60%)`
+  color: `hsl(${Math.random() * 360}, 70%, 60%)`
 }));
 
 function checkCollision(p, o) {
@@ -91,51 +87,36 @@ function checkCollision(p, o) {
 }
 
 function update() {
-  // Smooth tilt motion
   tiltX += (targetTiltX - tiltX) * 0.1;
   tiltY += (targetTiltY - tiltY) * 0.1;
 
   player.x += tiltX * 0.5;
   player.y += tiltY * 0.5;
 
-  // Clamp to screen
   player.x = Math.max(player.radius, Math.min(canvas.width - player.radius, player.x));
   player.y = Math.max(player.radius, Math.min(canvas.height - player.radius, player.y));
 
-  // Move obstacles
   for (let o of obstacles) {
     o.x += o.dx;
     o.y += o.dy;
+
+    // Screen edge bounce
     if (o.x < 0 || o.x > canvas.width) o.dx *= -1;
     if (o.y < 0 || o.y > canvas.height) o.dy *= -1;
 
+    // Collision reaction
     if (checkCollision(player, o)) {
-      player.collided = true;
-      player.collisionTimer = 10;
+      const angle = Math.atan2(o.y - player.y, o.x - player.x);
+      const speed = 2 + Math.random() * 1;
+      o.dx = Math.cos(angle) * speed + (Math.random() - 0.5) * 0.5;
+      o.dy = Math.sin(angle) * speed + (Math.random() - 0.5) * 0.5;
     }
-  }
-
-  if (player.collisionTimer > 0) {
-    player.collisionTimer--;
-    player.radius = player.baseRadius + 4 * Math.sin(player.collisionTimer * 0.5);
-    player.color = "red";
-  } else {
-    player.collided = false;
-    player.radius = player.baseRadius;
-    player.color = "white";
   }
 }
 
 function draw() {
-  // Flash red background if in collision
-  if (player.collided) {
-    ctx.fillStyle = "rgba(255, 0, 0, 0.2)";
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-  } else {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-  }
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-  // Obstacles
   for (let o of obstacles) {
     ctx.beginPath();
     ctx.fillStyle = o.color;
@@ -143,7 +124,6 @@ function draw() {
     ctx.fill();
   }
 
-  // Player
   ctx.beginPath();
   ctx.fillStyle = player.color;
   ctx.arc(player.x, player.y, player.radius, 0, Math.PI * 2);
@@ -155,7 +135,6 @@ function loop() {
   draw();
   requestAnimationFrame(loop);
 }
-
 loop();
 </script>
 </body>
