@@ -1,0 +1,539 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Cosmic Gravity - Mobile</title>
+    <style>
+        * {
+            touch-action: none;
+            -webkit-touch-callout: none;
+            -webkit-user-select: none;
+            user-select: none;
+        }
+        
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: #000;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            position: fixed;
+            width: 100%;
+            height: 100%;
+        }
+        
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+        
+        #ui {
+            position: absolute;
+            top: env(safe-area-inset-top, 20px);
+            left: 20px;
+            right: 20px;
+            color: #fff;
+            font-size: 16px;
+            font-weight: 500;
+            text-shadow: 0 0 10px rgba(0, 0, 0, 0.8);
+            z-index: 10;
+            pointer-events: none;
+        }
+        
+        #controls {
+            position: absolute;
+            bottom: env(safe-area-inset-bottom, 20px);
+            left: 20px;
+            right: 20px;
+            display: flex;
+            justify-content: space-between;
+            gap: 10px;
+            z-index: 10;
+        }
+        
+        .button {
+            background: rgba(255, 255, 255, 0.1);
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            color: #fff;
+            padding: 15px 20px;
+            border-radius: 25px;
+            font-size: 14px;
+            font-weight: 600;
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            flex: 1;
+            text-align: center;
+            transition: all 0.3s;
+        }
+        
+        .button:active {
+            background: rgba(255, 255, 255, 0.2);
+            transform: scale(0.95);
+        }
+        
+        .button.active {
+            background: rgba(100, 200, 255, 0.3);
+            border-color: rgba(100, 200, 255, 0.8);
+        }
+        
+        #instructions {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #fff;
+            text-align: center;
+            font-size: 18px;
+            opacity: 0.8;
+            padding: 20px;
+            max-width: 80%;
+            text-shadow: 0 0 20px rgba(0, 0, 0, 0.8);
+            pointer-events: none;
+            transition: opacity 0.5s;
+        }
+        
+        .hide {
+            opacity: 0;
+        }
+        
+        .status {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 10px;
+        }
+        
+        .glow {
+            animation: pulse 2s ease-in-out infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 0.8; }
+            50% { opacity: 1; }
+        }
+    </style>
+</head>
+<body>
+    <div id="ui">
+        <div class="status">
+            <div>Anchors: <span id="anchors" class="glow">5</span></div>
+            <div>Orbs: <span id="orbs" class="glow">0</span></div>
+        </div>
+    </div>
+    
+    <div id="instructions">
+        Tap to place gravity anchors
+    </div>
+    
+    <div id="controls">
+        <div class="button active" id="anchorBtn">Place Anchor</div>
+        <div class="button" id="orbBtn">Launch Orb</div>
+        <div class="button" id="clearBtn">Clear</div>
+    </div>
+    
+    <canvas id="canvas"></canvas>
+    
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        
+        // Set canvas size
+        function resizeCanvas() {
+            canvas.width = window.innerWidth * window.devicePixelRatio;
+            canvas.height = window.innerHeight * window.devicePixelRatio;
+            canvas.style.width = window.innerWidth + 'px';
+            canvas.style.height = window.innerHeight + 'px';
+            ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+        }
+        resizeCanvas();
+        
+        // Game state
+        let time = 0;
+        let mode = 'PLACE_ANCHORS';
+        let anchorsRemaining = 5;
+        let currentTouch = null;
+        let touchStart = null;
+        let selectedAnchor = null;
+        
+        // Game objects
+        const anchors = [];
+        const orbs = [];
+        const particles = [];
+        const stars = [];
+        
+        // UI elements
+        const instructions = document.getElementById('instructions');
+        const anchorBtn = document.getElementById('anchorBtn');
+        const orbBtn = document.getElementById('orbBtn');
+        const clearBtn = document.getElementById('clearBtn');
+        
+        // Initialize stars
+        for (let i = 0; i < 150; i++) {
+            stars.push({
+                x: Math.random() * window.innerWidth,
+                y: Math.random() * window.innerHeight,
+                size: Math.random() * 1.5,
+                brightness: Math.random(),
+                twinkle: Math.random() * Math.PI * 2
+            });
+        }
+        
+        // Create gravity anchor with default mass of 100
+        function createAnchor(x, y) {
+            anchors.push({
+                x, y,
+                mass: 100,
+                radius: 25,
+                hue: Math.random() * 360,
+                pulsePhase: Math.random() * Math.PI * 2,
+                touched: false
+            });
+        }
+        
+        // Create orb
+        function createOrb(x, y, vx, vy) {
+            orbs.push({
+                x, y, vx, vy,
+                trail: [],
+                maxTrailLength: 100,
+                hue: Math.random() * 360,
+                size: 4,
+                life: 1,
+                mass: 1
+            });
+        }
+        
+        // Create particle
+        function createParticle(x, y, vx, vy, hue) {
+            particles.push({
+                x, y, vx, vy, hue,
+                life: 1,
+                size: Math.random() * 3 + 1
+            });
+        }
+        
+        // Touch handlers
+        canvas.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            const touch = e.touches[0];
+            const rect = canvas.getBoundingClientRect();
+            const x = touch.clientX - rect.left;
+            const y = touch.clientY - rect.top;
+            
+            currentTouch = { x, y };
+            touchStart = { x, y, time: Date.now() };
+            
+            // Hide instructions on first touch
+            instructions.classList.add('hide');
+            
+            // Check if touching an anchor
+            if (mode === 'LAUNCH_ORBS') {
+                anchors.forEach(anchor => {
+                    const dx = x - anchor.x;
+                    const dy = y - anchor.y;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    
+                    if (dist < anchor.radius + 20) {
+                        selectedAnchor = anchor;
+                        anchor.touched = true;
+                    }
+                });
+            }
+        });
+        
+        canvas.addEventListener('touchmove', (e) => {
+            e.preventDefault();
+            if (e.touches[0]) {
+                const touch = e.touches[0];
+                const rect = canvas.getBoundingClientRect();
+                currentTouch = {
+                    x: touch.clientX - rect.left,
+                    y: touch.clientY - rect.top
+                };
+            }
+        });
+        
+        canvas.addEventListener('touchend', (e) => {
+            e.preventDefault();
+            
+            if (!touchStart) return;
+            
+            const touchDuration = Date.now() - touchStart.time;
+            const dx = currentTouch.x - touchStart.x;
+            const dy = currentTouch.y - touchStart.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            
+            if (mode === 'PLACE_ANCHORS') {
+                if (distance < 10 && touchDuration < 500 && anchorsRemaining > 0) {
+                    createAnchor(touchStart.x, touchStart.y);
+                    anchorsRemaining--;
+                    
+                    // Burst effect
+                    for (let i = 0; i < 20; i++) {
+                        const angle = (Math.PI * 2 * i) / 20;
+                        createParticle(
+                            touchStart.x, touchStart.y,
+                            Math.cos(angle) * 3, Math.sin(angle) * 3,
+                            anchors[anchors.length - 1].hue
+                        );
+                    }
+                    
+                    if (anchorsRemaining === 0) {
+                        switchToOrbMode();
+                    }
+                }
+            } else if (mode === 'LAUNCH_ORBS') {
+                if (selectedAnchor && distance < 20) {
+                    // Cycle anchor mass
+                    const masses = [100, 200, 400, 800];
+                    const currentIndex = masses.indexOf(selectedAnchor.mass);
+                    selectedAnchor.mass = masses[(currentIndex + 1) % masses.length];
+                    
+                    // Visual feedback
+                    for (let i = 0; i < 15; i++) {
+                        const angle = (Math.PI * 2 * i) / 15;
+                        createParticle(
+                            selectedAnchor.x, selectedAnchor.y,
+                            Math.cos(angle) * 2, Math.sin(angle) * 2,
+                            selectedAnchor.hue
+                        );
+                    }
+                } else if (distance > 20) {
+                    // Launch orb with very gentle initial velocity
+                    const vx = (dx / distance) * Math.min(distance * 0.02, 2);
+                    const vy = (dy / distance) * Math.min(distance * 0.02, 2);
+                    createOrb(touchStart.x, touchStart.y, vx, vy);
+                }
+            }
+            
+            // Reset
+            currentTouch = null;
+            touchStart = null;
+            selectedAnchor = null;
+            anchors.forEach(anchor => anchor.touched = false);
+        });
+        
+        // Button handlers
+        anchorBtn.addEventListener('click', () => {
+            if (anchors.length < 5) {
+                mode = 'PLACE_ANCHORS';
+                anchorsRemaining = Math.max(1, 5 - anchors.length);
+                anchorBtn.classList.add('active');
+                orbBtn.classList.remove('active');
+                instructions.textContent = 'Tap to place gravity anchors';
+                instructions.classList.remove('hide');
+            }
+        });
+        
+        orbBtn.addEventListener('click', () => {
+            switchToOrbMode();
+        });
+        
+        clearBtn.addEventListener('click', () => {
+            // Clear all objects
+            orbs.length = 0;
+            particles.length = 0;
+            anchors.length = 0;
+            
+            // Reset to initial state
+            mode = 'PLACE_ANCHORS';
+            anchorsRemaining = 5;
+            anchorBtn.classList.add('active');
+            orbBtn.classList.remove('active');
+            instructions.textContent = 'Tap to place gravity anchors';
+            instructions.classList.remove('hide');
+        });
+        
+        function switchToOrbMode() {
+            mode = 'LAUNCH_ORBS';
+            orbBtn.classList.add('active');
+            anchorBtn.classList.remove('active');
+            instructions.textContent = 'Swipe to launch orbs • Tap anchors to change mass';
+            instructions.classList.remove('hide');
+            setTimeout(() => instructions.classList.add('hide'), 3000);
+        }
+        
+        // Physics
+        function updatePhysics() {
+            // Update orbs
+            orbs.forEach((orb, index) => {
+                let totalFx = 0;
+                let totalFy = 0;
+                
+                // Apply gravity from anchors with slingshot mechanics
+                anchors.forEach(anchor => {
+                    const dx = anchor.x - orb.x;
+                    const dy = anchor.y - orb.y;
+                    const distSq = dx * dx + dy * dy;
+                    const dist = Math.sqrt(distSq);
+                    
+                    if (dist > 1) {
+                        // Slightly reduced base gravity for better balance
+                        const force = (anchor.mass * orb.mass * 1.5) / distSq;
+                        
+                        // Stronger slingshot effect for escape velocity
+                        let slingshotMultiplier = 1;
+                        if (dist < anchor.radius * 2.5) {
+                            // Stronger multiplier that allows escape
+                            slingshotMultiplier = 1 + (anchor.radius * 2.5 - dist) / (anchor.radius * 2.5);
+                            
+                            // Create trail particles during close encounters
+                            if (Math.random() < 0.25) {
+                                createParticle(
+                                    orb.x - orb.vx * 2,
+                                    orb.y - orb.vy * 2,
+                                    orb.vx * 0.1 + (Math.random() - 0.5),
+                                    orb.vy * 0.1 + (Math.random() - 0.5),
+                                    orb.hue
+                                );
+                            }
+                        }
+                        
+                        totalFx += (dx / dist) * force * slingshotMultiplier;
+                        totalFy += (dy / dist) * force * slingshotMultiplier;
+                    }
+                    
+                    // Core absorption (only very close)
+                    if (dist < anchor.radius * 0.5) {
+                        orb.life -= 0.02;
+                        if (Math.random() < 0.3) {
+                            createParticle(
+                                orb.x, orb.y,
+                                (Math.random() - 0.5) * 3,
+                                (Math.random() - 0.5) * 3,
+                                anchor.hue
+                            );
+                        }
+                    }
+                });
+                
+                // Update motion with slightly reduced force application
+                orb.vx += totalFx * 0.35;
+                orb.vy += totalFy * 0.35;
+                
+                // Slightly higher velocity cap for better escapes
+                const speed = Math.sqrt(orb.vx * orb.vx + orb.vy * orb.vy);
+                if (speed > 12) {
+                    orb.vx = (orb.vx / speed) * 12;
+                    orb.vy = (orb.vy / speed) * 12;
+                }
+                
+                orb.vx *= 0.998; // Very slight damping
+                orb.vy *= 0.998;
+                orb.x += orb.vx;
+                orb.y += orb.vy;
+                
+                // Update trail
+                orb.trail.push({ x: orb.x, y: orb.y });
+                if (orb.trail.length > orb.maxTrailLength) {
+                    orb.trail.shift();
+                }
+                
+                // Remove if dead or too far (increased bounds for longer orbits)
+                if (orb.life <= 0 || 
+                    orb.x < -500 || orb.x > window.innerWidth + 500 ||
+                    orb.y < -500 || orb.y > window.innerHeight + 500) {
+                    
+                    if (orb.life <= 0) {
+                        for (let i = 0; i < 10; i++) {
+                            createParticle(
+                                orb.x, orb.y,
+                                (Math.random() - 0.5) * 4,
+                                (Math.random() - 0.5) * 4,
+                                orb.hue
+                            );
+                        }
+                    }
+                    orbs.splice(index, 1);
+                }
+            });
+            
+            // Update particles
+            particles.forEach((particle, index) => {
+                particle.x += particle.vx;
+                particle.y += particle.vy;
+                particle.life -= 0.02;
+                particle.vx *= 0.98;
+                particle.vy *= 0.98;
+                
+                if (particle.life <= 0) {
+                    particles.splice(index, 1);
+                }
+            });
+        }
+        
+        // Render
+        function render() {
+            // Clear
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.1)';
+            ctx.fillRect(0, 0, window.innerWidth, window.innerHeight);
+            
+            // Stars
+            stars.forEach(star => {
+                const twinkle = Math.sin(time * 2 + star.twinkle) * 0.3 + 0.7;
+                ctx.fillStyle = `rgba(255, 255, 255, ${star.brightness * twinkle * 0.8})`;
+                ctx.beginPath();
+                ctx.arc(star.x, star.y, star.size, 0, Math.PI * 2);
+                ctx.fill();
+            });
+            
+            // Orb trails with speed-based effects
+            orbs.forEach(orb => {
+                if (orb.trail.length > 1) {
+                    // Calculate current speed for trail effects
+                    const speed = Math.sqrt(orb.vx * orb.vx + orb.vy * orb.vy);
+                    const speedFactor = Math.min(speed / 10, 1);
+                    
+                    ctx.strokeStyle = `hsla(${orb.hue}, 70%, 50%, 0.3)`;
+                    ctx.lineWidth = 2 + speedFactor * 2; // Thicker trails when moving fast
+                    ctx.lineCap = 'round';
+                    ctx.beginPath();
+                    ctx.moveTo(orb.trail[0].x, orb.trail[0].y);
+                    
+                    for (let i = 1; i < orb.trail.length; i++) {
+                        const alpha = (i / orb.trail.length) * 0.3 * orb.life * (1 + speedFactor);
+                        ctx.strokeStyle = `hsla(${orb.hue}, 70%, ${50 + speedFactor * 20}%, ${alpha})`;
+                        ctx.lineTo(orb.trail[i].x, orb.trail[i].y);
+                    }
+                    ctx.stroke();
+                }
+            });
+            
+            // Anchors
+            anchors.forEach(anchor => {
+                const pulse = Math.sin(time * 3 + anchor.pulsePhase) * 0.1 + 1;
+                const touchScale = anchor.touched ? 1.2 : 1;
+                
+                // Field
+                const fieldRadius = Math.sqrt(anchor.mass) * 5;
+                const fieldGradient = ctx.createRadialGradient(
+                    anchor.x, anchor.y, anchor.radius,
+                    anchor.x, anchor.y, fieldRadius * pulse
+                );
+                fieldGradient.addColorStop(0, `hsla(${anchor.hue}, 70%, 50%, 0.2)`);
+                fieldGradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
+                
+                ctx.fillStyle = fieldGradient;
+                ctx.beginPath();
+                ctx.arc(anchor.x, anchor.y, fieldRadius * pulse, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // Body
+                const gradient = ctx.createRadialGradient(
+                    anchor.x, anchor.y, 0,
+                    anchor.x, anchor.y, anchor.radius * touchScale
+                );
+                gradient.addColorStop(0, `hsla(${anchor.hue}, 100%, 70%, 1)`);
+                gradient.addColorStop(0.7, `hsla(${anchor.hue}, 100%, 50%, 1)`);
+                gradient.addColorStop(1, `hsla(${anchor.hue}, 100%, 30%, 1)`);
+                
+                ctx.fillStyle = gradient;
+                ctx.beginPath();
+                ctx.arc(anchor.x, anchor.y, anchor.radius * pulse * touchScale, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // Mass indicator
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+                ctx.font = 'bold 14px -apple-system, sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText(anchor.mass, anchor.x, an
