@@ -3,13 +3,12 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Gyro Avoidance Game</title>
+  <title>Gyro Collision Game</title>
   <style>
     html, body {
       margin: 0;
       overflow: hidden;
       background: black;
-      touch-action: none;
     }
     canvas {
       display: block;
@@ -43,7 +42,7 @@ let targetTiltY = 0;
 let tiltX = 0;
 let tiltY = 0;
 
-// Motion permission for iOS
+// iOS permission handling
 function enableMotion() {
   if (typeof DeviceOrientationEvent.requestPermission === "function") {
     DeviceOrientationEvent.requestPermission().then(response => {
@@ -61,34 +60,41 @@ document.getElementById("permission").style.display = "block";
 document.getElementById("permission").addEventListener("click", enableMotion);
 
 function handleTilt(e) {
-  targetTiltX = e.gamma || 0; // side tilt
-  targetTiltY = e.beta || 0;  // front-back tilt
+  targetTiltX = e.gamma || 0;
+  targetTiltY = e.beta || 0;
 }
 
-// Player particle
 let player = {
   x: canvas.width / 2,
   y: canvas.height / 2,
   radius: 12,
+  baseRadius: 12,
   color: "white",
+  collided: false,
+  collisionTimer: 0
 };
 
-// Obstacles
 let obstacles = Array.from({ length: 20 }).map(() => ({
   x: Math.random() * canvas.width,
   y: Math.random() * canvas.height,
   r: 10 + Math.random() * 10,
   dx: -1 + Math.random() * 2,
   dy: -1 + Math.random() * 2,
-  color: "hsl(" + Math.random() * 360 + ", 80%, 60%)",
+  color: `hsl(${Math.random() * 360}, 80%, 60%)`
 }));
 
+function checkCollision(p, o) {
+  const dx = p.x - o.x;
+  const dy = p.y - o.y;
+  const distance = Math.sqrt(dx * dx + dy * dy);
+  return distance < p.radius + o.r;
+}
+
 function update() {
-  // Smoothly interpolate tilt
+  // Smooth tilt motion
   tiltX += (targetTiltX - tiltX) * 0.1;
   tiltY += (targetTiltY - tiltY) * 0.1;
 
-  // Map tilt to screen movement
   player.x += tiltX * 0.5;
   player.y += tiltY * 0.5;
 
@@ -100,14 +106,34 @@ function update() {
   for (let o of obstacles) {
     o.x += o.dx;
     o.y += o.dy;
-
     if (o.x < 0 || o.x > canvas.width) o.dx *= -1;
     if (o.y < 0 || o.y > canvas.height) o.dy *= -1;
+
+    if (checkCollision(player, o)) {
+      player.collided = true;
+      player.collisionTimer = 10;
+    }
+  }
+
+  if (player.collisionTimer > 0) {
+    player.collisionTimer--;
+    player.radius = player.baseRadius + 4 * Math.sin(player.collisionTimer * 0.5);
+    player.color = "red";
+  } else {
+    player.collided = false;
+    player.radius = player.baseRadius;
+    player.color = "white";
   }
 }
 
 function draw() {
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  // Flash red background if in collision
+  if (player.collided) {
+    ctx.fillStyle = "rgba(255, 0, 0, 0.2)";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+  } else {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+  }
 
   // Obstacles
   for (let o of obstacles) {
