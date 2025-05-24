@@ -3,13 +3,13 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Trippy Gyro Wave</title>
+  <title>Gyro Wave</title>
   <style>
     html, body {
       margin: 0;
-      height: 100%;
       overflow: hidden;
       background: black;
+      touch-action: none;
     }
     canvas {
       display: block;
@@ -19,76 +19,83 @@
       top: 50%;
       left: 50%;
       transform: translate(-50%, -50%);
-      padding: 20px 30px;
-      background: #111;
       color: white;
+      background: #222;
+      border: 1px solid #555;
+      padding: 20px 30px;
       font-size: 18px;
       font-family: sans-serif;
-      border: 1px solid #444;
       border-radius: 10px;
       display: none;
+      cursor: pointer;
     }
   </style>
 </head>
 <body>
-<canvas id="waveCanvas"></canvas>
-<div id="permission">Tap to enable motion access</div>
+<canvas id="canvas"></canvas>
+<div id="permission">Tap to enable motion</div>
 <script>
-const canvas = document.getElementById('waveCanvas');
-const ctx = canvas.getContext('2d');
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
 canvas.width = window.innerWidth;
 canvas.height = window.innerHeight;
 
-let tilt = 0;
+let tiltX = 0;
 
-// Request permission on iOS
+// Handle motion permission on iOS
 function enableMotion() {
+  const button = document.getElementById('permission');
   if (typeof DeviceOrientationEvent.requestPermission === 'function') {
-    DeviceOrientationEvent.requestPermission().then(response => {
-      if (response === 'granted') {
-        window.addEventListener('deviceorientation', handleTilt, true);
-        document.getElementById('permission').style.display = 'none';
-      }
-    });
+    DeviceOrientationEvent.requestPermission()
+      .then(response => {
+        if (response === 'granted') {
+          window.addEventListener("deviceorientation", handleOrientation, true);
+          button.style.display = "none";
+        }
+      })
+      .catch(console.error);
   } else {
-    window.addEventListener('deviceorientation', handleTilt, true);
-    document.getElementById('permission').style.display = 'none';
+    window.addEventListener("deviceorientation", handleOrientation, true);
+    button.style.display = "none";
   }
 }
 
-function handleTilt(event) {
-  tilt = event.gamma || 0; // -90 to 90 degrees side-to-side
+document.getElementById("permission").style.display = "block";
+document.getElementById("permission").addEventListener("click", enableMotion);
+
+// Handle gyro input
+function handleOrientation(event) {
+  tiltX = event.gamma || 0; // gamma is left-right tilt when phone is flat
 }
 
-document.body.addEventListener('click', enableMotion);
-document.getElementById('permission').style.display = 'block';
-
 let time = 0;
-function drawWave() {
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+function draw() {
   time += 0.02;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-  const amplitude = 40;
-  const freq = 0.03;
-  const offset = tilt * 0.05;
+  const lines = 40;
+  const amplitude = 50;
+  const frequency = 0.02;
+  const waveOffset = tiltX * 0.2; // wiggle strength
 
-  for (let y = 0; y < canvas.height; y += 5) {
+  for (let i = 0; i < lines; i++) {
+    const y = (canvas.height / lines) * i;
     ctx.beginPath();
-    for (let x = 0; x < canvas.width; x += 10) {
-      const wave = Math.sin((x + time * 100 + y * 0.5) * freq + offset) * amplitude;
-      const px = x;
-      const py = y + wave;
-      ctx.lineTo(px, py);
+    for (let x = 0; x < canvas.width; x += 5) {
+      const wave =
+        Math.sin((x + time * 100 + i * 10 + waveOffset * 50) * frequency) *
+        amplitude;
+      ctx.lineTo(x, y + wave);
     }
-    const hue = (time * 40 + y) % 360;
-    ctx.strokeStyle = `hsl(${hue}, 100%, 50%)`;
+    ctx.strokeStyle = `hsl(${(time * 40 + i * 10) % 360}, 100%, 60%)`;
     ctx.stroke();
   }
 
-  requestAnimationFrame(drawWave);
+  requestAnimationFrame(draw);
 }
 
-drawWave();
+draw();
 </script>
 </body>
 </html>
