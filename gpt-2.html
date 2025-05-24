@@ -3,12 +3,13 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Sloshy Gyro Waves</title>
+  <title>Gyro Avoidance Game</title>
   <style>
     html, body {
       margin: 0;
-      background: black;
       overflow: hidden;
+      background: black;
+      touch-action: none;
     }
     canvas {
       display: block;
@@ -18,13 +19,13 @@
       top: 50%;
       left: 50%;
       transform: translate(-50%, -50%);
-      color: white;
       background: #222;
+      color: white;
       padding: 20px 30px;
       border-radius: 12px;
       font-family: sans-serif;
-      cursor: pointer;
       display: none;
+      cursor: pointer;
     }
   </style>
 </head>
@@ -32,91 +33,104 @@
 <canvas id="canvas"></canvas>
 <div id="permission">Tap to enable motion</div>
 <script>
-const canvas = document.getElementById('canvas');
-const ctx = canvas.getContext('2d');
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
 canvas.width = window.innerWidth;
 canvas.height = window.innerHeight;
-
-let gammaTilt = 0;
-let betaTilt = 0;
 
 let targetTiltX = 0;
 let targetTiltY = 0;
 let tiltX = 0;
 let tiltY = 0;
 
-// iOS motion permission
+// Motion permission for iOS
 function enableMotion() {
-  if (typeof DeviceOrientationEvent.requestPermission === 'function') {
+  if (typeof DeviceOrientationEvent.requestPermission === "function") {
     DeviceOrientationEvent.requestPermission().then(response => {
-      if (response === 'granted') {
-        window.addEventListener('deviceorientation', handleTilt, true);
-        document.getElementById('permission').style.display = 'none';
+      if (response === "granted") {
+        window.addEventListener("deviceorientation", handleTilt, true);
+        document.getElementById("permission").style.display = "none";
       }
     });
   } else {
-    window.addEventListener('deviceorientation', handleTilt, true);
-    document.getElementById('permission').style.display = 'none';
+    window.addEventListener("deviceorientation", handleTilt, true);
+    document.getElementById("permission").style.display = "none";
   }
 }
-document.getElementById('permission').style.display = 'block';
-document.getElementById('permission').addEventListener('click', enableMotion);
+document.getElementById("permission").style.display = "block";
+document.getElementById("permission").addEventListener("click", enableMotion);
 
-// Read gyro data
-function handleTilt(event) {
-  targetTiltX = event.gamma || 0; // side-to-side
-  targetTiltY = event.beta || 0;  // front-to-back
+function handleTilt(e) {
+  targetTiltX = e.gamma || 0; // side tilt
+  targetTiltY = e.beta || 0;  // front-back tilt
 }
 
-// Simulated water-like wave points
-const waveCount = 80;
-let points = new Array(waveCount).fill().map((_, i) => ({
-  x: (canvas.width / (waveCount - 1)) * i,
+// Player particle
+let player = {
+  x: canvas.width / 2,
   y: canvas.height / 2,
-  baseY: canvas.height / 2,
-  velocity: 0
+  radius: 12,
+  color: "white",
+};
+
+// Obstacles
+let obstacles = Array.from({ length: 20 }).map(() => ({
+  x: Math.random() * canvas.width,
+  y: Math.random() * canvas.height,
+  r: 10 + Math.random() * 10,
+  dx: -1 + Math.random() * 2,
+  dy: -1 + Math.random() * 2,
+  color: "hsl(" + Math.random() * 360 + ", 80%, 60%)",
 }));
+
+function update() {
+  // Smoothly interpolate tilt
+  tiltX += (targetTiltX - tiltX) * 0.1;
+  tiltY += (targetTiltY - tiltY) * 0.1;
+
+  // Map tilt to screen movement
+  player.x += tiltX * 0.5;
+  player.y += tiltY * 0.5;
+
+  // Clamp to screen
+  player.x = Math.max(player.radius, Math.min(canvas.width - player.radius, player.x));
+  player.y = Math.max(player.radius, Math.min(canvas.height - player.radius, player.y));
+
+  // Move obstacles
+  for (let o of obstacles) {
+    o.x += o.dx;
+    o.y += o.dy;
+
+    if (o.x < 0 || o.x > canvas.width) o.dx *= -1;
+    if (o.y < 0 || o.y > canvas.height) o.dy *= -1;
+  }
+}
 
 function draw() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-  // Smooth tilting
-  tiltX += (targetTiltX - tiltX) * 0.05;
-  tiltY += (targetTiltY - tiltY) * 0.05;
-
-  // Update points
-  for (let i = 0; i < points.length; i++) {
-    const p = points[i];
-    const dx = (i - waveCount / 2) / waveCount;
-
-    const force = tiltX * dx * 0.5 + tiltY * 0.3;
-    p.velocity += force - (p.y - p.baseY) * 0.05;
-    p.velocity *= 0.9; // damping
-    p.y += p.velocity;
+  // Obstacles
+  for (let o of obstacles) {
+    ctx.beginPath();
+    ctx.fillStyle = o.color;
+    ctx.arc(o.x, o.y, o.r, 0, Math.PI * 2);
+    ctx.fill();
   }
 
-  // Draw wavy line
+  // Player
   ctx.beginPath();
-  ctx.moveTo(points[0].x, points[0].y);
-  for (let i = 1; i < points.length - 1; i++) {
-    const p1 = points[i];
-    const p2 = points[i + 1];
-    const cx = (p1.x + p2.x) / 2;
-    const cy = (p1.y + p2.y) / 2;
-    ctx.quadraticCurveTo(p1.x, p1.y, cx, cy);
-  }
-  ctx.lineTo(canvas.width, canvas.height);
-  ctx.lineTo(0, canvas.height);
-  ctx.closePath();
-
-  const hue = (Date.now() / 30) % 360;
-  ctx.fillStyle = `hsl(${hue}, 100%, 60%)`;
+  ctx.fillStyle = player.color;
+  ctx.arc(player.x, player.y, player.radius, 0, Math.PI * 2);
   ctx.fill();
-
-  requestAnimationFrame(draw);
 }
 
-draw();
+function loop() {
+  update();
+  draw();
+  requestAnimationFrame(loop);
+}
+
+loop();
 </script>
 </body>
 </html>
