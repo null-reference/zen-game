@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Gyro Dodge</title>
+  <style>
+    html, body {
+      margin: 0;
+      overflow: hidden;
+      background: linear-gradient(to bottom, #1a1a2e, #16213e); /* Dark gradient background */
+      font-family: 'Press Start 2P', cursive; /* Retro arcade font */
+      color: white;
+    }
+    canvas {
+      display: block;
+      filter: drop-shadow(0 0 8px rgba(255, 255, 255, 0.5)); /* Subtle glow for canvas */
+    }
+    #permission, #gameOver, #gameStats {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: rgba(0, 0, 0, 0.7); /* Slightly transparent background */
+      color: white;
+      padding: 25px 40px;
+      border-radius: 15px;
+      text-align: center;
+      box-shadow: 0 0 20px rgba(0, 255, 255, 0.6); /* Cyan glow */
+      border: 2px solid cyan;
+      font-size: 1.2em;
+    }
+    #permission button, #gameOver button {
+      background: #00bcd4; /* Cyan button */
+      color: white;
+      border: none;
+      padding: 12px 25px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 1em;
+      margin-top: 20px;
+      transition: background 0.3s ease, transform 0.2s ease;
+    }
+    #permission button:hover, #gameOver button:hover {
+      background: #0097a7;
+      transform: scale(1.05);
+    }
+    #gameStats {
+      top: 20px;
+      left: 20px;
+      transform: none;
+      background: none;
+      box-shadow: none;
+      border: none;
+      padding: 0;
+      text-align: left;
+      font-size: 1em;
+    }
+    #gameStats span {
+      display: block;
+      margin-bottom: 5px;
+    }
+  </style>
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+</head>
+<body>
+<canvas id="canvas"></canvas>
+<div id="permission">
+  <h2>Gyro Dodge</h2>
+  <p>Tap to enable motion sensors and start the game!</p>
+  <button id="startButton">Start Game</button>
+</div>
+<div id="gameOver" style="display: none;">
+  <h2>Game Over!</h2>
+  <p>You crashed!</p>
+  <p id="finalScore"></p>
+  <p id="finalTime"></p>
+  <button id="restartButton">Play Again</button>
+</div>
+<div id="gameStats">
+  <span id="timeDisplay">Time: 0s</span>
+  <span id="collisionDisplay">Collisions: 0</span>
+</div>
+
+<script>
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
+
+let targetTiltX = 0;
+let targetTiltY = 0;
+let tiltX = 0;
+let tiltY = 0;
+
+let initialGamma = 0;
+let initialBeta = 0;
+let hasBaseline = false;
+
+let player = {
+  x: canvas.width / 2,
+  y: canvas.height / 2,
+  radius: 14,
+  color: "#00e676", // Bright green
+  speedMultiplier: 0.7 // Smoother, slightly faster movement
+};
+
+let collisionCount = 0;
+let startTime = 0;
+let gameRunning = false;
+let animationFrameId; // To store requestAnimationFrame ID
+
+const obstacleBaseSpeed = 1;
+const obstacleCount = 25; // More obstacles
+let obstacles = [];
+
+const timeDisplay = document.getElementById("timeDisplay");
+const collisionDisplay = document.getElementById("collisionDisplay");
+const permissionScreen = document.getElementById("permission");
+const gameOverScreen = document.getElementById("gameOver");
+const finalScoreDisplay = document.getElementById("finalScore");
+const finalTimeDisplay = document.getElementById("finalTime");
+const startButton = document.getElementById("startButton");
+const restartButton = document.getElementById("restartButton");
+
+// --- Game Initialization and Reset ---
+function initializeGame() {
+  player.x = canvas.width / 2;
+  player.y = canvas.height / 2;
+  collisionCount = 0;
+  startTime = Date.now();
+  gameRunning = true;
+  hasBaseline = false; // Reset baseline for fresh game
+  obstacles = Array.from({ length: obstacleCount }).map(() => ({
+    x: Math.random() * canvas.width,
+    y: Math.random() * canvas.height,
+    r: 10 + Math.random() * 10,
+    dx: (Math.random() - 0.5) * obstacleBaseSpeed * 2, // Initial varied speed
+    dy: (Math.random() - 0.5) * obstacleBaseSpeed * 2,
+    color: `hsl(${Math.random() * 360}, 80%, 70%)`,
+    wasColliding: false,
+    collisionEffect: false, // For visual feedback
+    effectTimer: 0
+  }));
+  gameOverScreen.style.display = "none";
+  permissionScreen.style.display = "none";
+  timeDisplay.textContent = `Time: 0s`;
+  collisionDisplay.textContent = `Collisions: 0`;
+  loop(); // Start the game loop
+}
+
+// --- Motion Permission ---
+function enableMotion() {
+  if (typeof DeviceOrientationEvent.requestPermission === "function") {
+    DeviceOrientationEvent.requestPermission().then(response => {
+      if (response === "granted") {
+        window.addEventListener("deviceorientation", handleTilt, true);
+        initializeGame();
+      } else {
+        alert("Motion sensor permission denied. Game cannot start.");
+      }
+    }).catch(error => {
+      console.error("DeviceOrientationEvent.requestPermission failed:", error);
+      alert("Error requesting motion sensor permission.");
+    });
+  } else {
+    window.addEventListener("deviceorientation", handleTilt, true);
+    initializeGame();
+  }
+}
+
+startButton.addEventListener("click", enableMotion);
+restartButton.addEventListener("click", initializeGame);
+
+// --- Tilt Handling ---
+function handleTilt(e) {
+  if (!hasBaseline) {
+    initialGamma = e.gamma || 0;
+    initialBeta = e.beta || 0;
+    hasBaseline = true;
+  }
+
+  // Smooth out raw sensor data
+  const rawTargetTiltX = ((e.gamma || 0) - initialGamma);
+  const rawTargetTiltY = ((e.beta || 0) - initialBeta);
+
+  // Apply a deadzone to prevent drift when device is still
+  const deadzone = 1; // degrees
+  targetTiltX = Math.abs(rawTargetTiltX) > deadzone ? rawTargetTiltX : 0;
+  targetTiltY = Math.abs(rawTargetTiltY) > deadzone ? rawTargetTiltY : 0;
+}
+
+// --- Collision Detection ---
+function checkCollision(p, o) {
+  const dx = p.x - o.x;
+  const dy = p.y - o.y;
+  const distance = Math.sqrt(dx * dx + dy * dy);
+  return distance < p.radius + o.r;
+}
+
+// --- Game Logic Update ---
+function update() {
+  if (!gameRunning) return;
+
+  // Smooth player movement
+  tiltX += (targetTiltX - tiltX) * 0.15; // Increased smoothing factor
+  tiltY += (targetTiltY - tiltY) * 0.15;
+
+  player.x += tiltX * player.speedMultiplier;
+  player.y += tiltY * player.speedMultiplier;
+
+  // Keep player within bounds with a slight bounce effect
+  if (player.x < player.radius) {
+    player.x = player.radius;
+    tiltX = -tiltX * 0.5; // Bounce
+  }
+  if (player.x > canvas.width - player.radius) {
+    player.x = canvas.width - player.radius;
+    tiltX = -tiltX * 0.5; // Bounce
+  }
+  if (player.y < player.radius) {
+    player.y = player.radius;
+    tiltY = -tiltY * 0.5; // Bounce
+  }
+  if (player.y > canvas.height - player.radius) {
+    player.y = canvas.height - player.radius;
+    tiltY = -tiltY * 0.5; // Bounce
+  }
+
+  for (let o of obstacles) {
+    o.x += o.dx;
+    o.y += o.dy;
+
+    // Obstacle boundary collision with bounce
+    if (o.x < o.r || o.x > canvas.width - o.r) o.dx *= -1;
+    if (o.y < o.r || o.y > canvas.height - o.r) o.dy *= -1;
+
+    const isColliding = checkCollision(player, o);
+    if (isColliding) {
+      if (!o.wasColliding) {
+        collisionCount++;
+        o.collisionEffect = true;
+        o.effectTimer = 30; // Frames for effect
+        // Player collision feedback
+        player.color = "#ff4444"; // Red on hit
+        setTimeout(() => player.color = "#00e676", 100); // Back to green quickly
+
+        // Game Over condition
+        cancelAnimationFrame(animationFrameId); // Stop the game loop
+        gameRunning = false;
+        gameOverScreen.style.display = "block";
+        finalScoreDisplay.textContent = `Collisions: ${collisionCount}`;
+        finalTimeDisplay.textContent = `Time Survived: ${Math.floor((Date.now() - startTime) / 1000)}s`;
+      }
+      // Nudge player away from obstacle on sustained collision
+      const angle = Math.atan2(player.y - o.y, player.x - o.x);
+      const overlap = (player.radius + o.r) - Math.sqrt((player.x - o.x)**2 + (player.y - o.y)**2);
+      player.x += Math.cos(angle) * overlap * 0.2; // Small nudge
+      player.y += Math.sin(angle) * overlap * 0.2;
+    }
+    o.wasColliding = isColliding;
+
+    // Update collision effect timer
+    if (o.collisionEffect) {
+      o.effectTimer--;
+      if (o.effectTimer <= 0) {
+        o.collisionEffect = false;
+      }
+    }
+  }
+
+  // Update stats display
+  timeDisplay.textContent = `Time: ${Math.floor((Date.now() - startTime) / 1000)}s`;
+  collisionDisplay.textContent = `Collisions: ${collisionCount}`;
+}
+
+// --- Drawing ---
+function draw() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  for (let o of obstacles) {
+    ctx.beginPath();
+    // Flash white on collision
+    ctx.fillStyle = o.collisionEffect ? "white" : o.color;
+    ctx.arc(o.x, o.y, o.r, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Subtle glow for obstacles
+    ctx.shadowBlur = 10;
+    ctx.shadowColor = o.collisionEffect ? "rgba(255, 255, 255, 0.8)" : o.color;
+    ctx.fill();
+    ctx.shadowBlur = 0; // Reset shadow
+  }
+
+  // Player
+  ctx.beginPath();
+  ctx.fillStyle = player.color;
+  ctx.arc(player.x, player.y, player.radius, 0, Math.PI * 2);
+  ctx.shadowBlur = 15;
+  ctx.shadowColor = player.color; // Player glow
+  ctx.fill();
+  ctx.shadowBlur = 0;
+}
+
+// --- Game Loop ---
+function loop() {
+  update();
+  draw();
+  animationFrameId = requestAnimationFrame(loop);
+}
+
+// Ensure initial display of permission screen
+permissionScreen.style.display = "block";
+
+// Handle window resizing
+window.addEventListener('resize', () => {
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+  // Reposition player if game is running
+  if (gameRunning) {
+    player.x = canvas.width / 2;
+    player.y = canvas.height / 2;
+  }
+});
+</script>
+</body>
+</html>
