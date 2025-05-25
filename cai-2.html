@@ -75,7 +75,6 @@
 <div id="gameStats">
   <span id="timeDisplay">Time: 0s</span>
   <span id="collisionDisplay">Collisions: 0</span>
-  <span id="comboDisplay">Combo: 0</span>
 </div>
 
 <script>
@@ -111,9 +110,8 @@ let animationFrameId;
 // Enhanced collision system variables
 let screenShake = { x: 0, y: 0, intensity: 0, duration: 0 };
 let particles = [];
-let combo = 0;
-let comboTimer = 0;
-let lastCollisionTime = 0;
+let impactWaves = [];
+let collisionHeat = 0;
 
 const obstacleBaseSpeed = 1;
 const obstacleCount = 25;
@@ -121,11 +119,49 @@ let obstacles = [];
 
 const timeDisplay = document.getElementById("timeDisplay");
 const collisionDisplay = document.getElementById("collisionDisplay");
-const comboDisplay = document.getElementById("comboDisplay");
 const permissionScreen = document.getElementById("permission");
 const startButton = document.getElementById("startButton");
 
-// Particle system for collision effects
+// Impact wave effect for dramatic collisions
+class ImpactWave {
+  constructor(x, y, maxRadius = 80) {
+    this.x = x;
+    this.y = y;
+    this.radius = 0;
+    this.maxRadius = maxRadius;
+    this.thickness = 8;
+    this.opacity = 1;
+    this.speed = 4;
+  }
+
+  update() {
+    this.radius += this.speed;
+    this.opacity = 1 - (this.radius / this.maxRadius);
+    this.thickness = 8 * this.opacity;
+  }
+
+  draw() {
+    if (this.opacity <= 0) return;
+    
+    ctx.save();
+    ctx.globalAlpha = this.opacity;
+    ctx.strokeStyle = `rgba(255, 100, 100, ${this.opacity})`;
+    ctx.lineWidth = this.thickness;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+    ctx.stroke();
+    
+    // Inner glow
+    ctx.strokeStyle = `rgba(255, 255, 255, ${this.opacity * 0.5})`;
+    ctx.lineWidth = this.thickness * 0.3;
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  isDead() {
+    return this.radius >= this.maxRadius;
+  }
+}
 class Particle {
   constructor(x, y, color) {
     this.x = x;
@@ -160,49 +196,60 @@ class Particle {
   }
 }
 
-// Create explosion particles
-function createExplosion(x, y, color, count = 15) {
-  for (let i = 0; i < count; i++) {
-    particles.push(new Particle(x, y, color));
+// Create explosion particles with different types
+function createExplosion(x, y, color, intensity = 1) {
+  const sparkCount = Math.floor(10 * intensity);
+  const debrisCount = Math.floor(5 * intensity);
+  
+  // Create sparks
+  for (let i = 0; i < sparkCount; i++) {
+    particles.push(new Particle(x, y, color, 'spark'));
   }
+  
+  // Create debris
+  for (let i = 0; i < debrisCount; i++) {
+    particles.push(new Particle(x, y, color, 'debris'));
+  }
+  
+  // Create impact wave
+  impactWaves.push(new ImpactWave(x, y, 60 + intensity * 20));
 }
 
-// Screen shake effect
-function addScreenShake(intensity, duration) {
+// Screen shake with different intensities and patterns
+function addScreenShake(intensity, duration, pattern = 'random') {
   screenShake.intensity = Math.max(screenShake.intensity, intensity);
   screenShake.duration = Math.max(screenShake.duration, duration);
+  screenShake.pattern = pattern;
 }
 
 function updateScreenShake() {
   if (screenShake.duration > 0) {
-    screenShake.x = (Math.random() - 0.5) * screenShake.intensity;
-    screenShake.y = (Math.random() - 0.5) * screenShake.intensity;
+    const factor = screenShake.duration / 20; // Fade out shake
+    
+    if (screenShake.pattern === 'horizontal') {
+      screenShake.x = (Math.random() - 0.5) * screenShake.intensity * factor;
+      screenShake.y = 0;
+    } else if (screenShake.pattern === 'vertical') {
+      screenShake.x = 0;
+      screenShake.y = (Math.random() - 0.5) * screenShake.intensity * factor;
+    } else {
+      screenShake.x = (Math.random() - 0.5) * screenShake.intensity * factor;
+      screenShake.y = (Math.random() - 0.5) * screenShake.intensity * factor;
+    }
+    
     screenShake.duration--;
-    screenShake.intensity *= 0.9;
+    screenShake.intensity *= 0.95;
   } else {
     screenShake.x = 0;
     screenShake.y = 0;
   }
 }
 
-// Combo system
-function updateCombo() {
-  const currentTime = Date.now();
-  if (currentTime - lastCollisionTime > 2000) { // Reset combo after 2 seconds
-    combo = 0;
+// Collision heat system for escalating intensity
+function updateCollisionHeat() {
+  if (collisionHeat > 0) {
+    collisionHeat -= 0.5; // Cool down gradually
   }
-  
-  if (comboTimer > 0) {
-    comboTimer--;
-  }
-  
-  comboDisplay.textContent = `Combo: ${combo}`;
-}
-
-function addCombo() {
-  combo++;
-  comboTimer = 60; // Visual effect duration
-  lastCollisionTime = Date.now();
 }
 
 // Game Initialization
@@ -212,12 +259,12 @@ function initializeGame() {
   player.invulnerable = false;
   player.invulnerabilityTimer = 0;
   collisionCount = 0;
-  combo = 0;
-  comboTimer = 0;
+  collisionHeat = 0;
   startTime = Date.now();
   gameRunning = true;
   hasBaseline = false;
   particles = [];
+  impactWaves = [];
   screenShake = { x: 0, y: 0, intensity: 0, duration: 0 };
   
   obstacles = Array.from({ length: obstacleCount }).map(() => ({
@@ -237,7 +284,6 @@ function initializeGame() {
   permissionScreen.style.display = "none";
   timeDisplay.textContent = `Time: 0s`;
   collisionDisplay.textContent = `Collisions: 0`;
-  comboDisplay.textContent = `Combo: 0`;
 
   if (animationFrameId) {
     cancelAnimationFrame(animationFrameId);
@@ -344,45 +390,54 @@ function update() {
     const isColliding = checkCollision(player, o);
     if (isColliding && !player.invulnerable) {
       if (!o.wasColliding) {
-        // COLLISION HAPPENED! Make it satisfying
+        // MASSIVE COLLISION IMPACT!
         collisionCount++;
-        addCombo();
+        collisionHeat += 15; // Build up collision intensity
         
-        // Create particle explosion
-        createExplosion(o.x, o.y, o.color, 20);
-        createExplosion(player.x, player.y, player.color, 15);
+        // Determine collision intensity based on speed and heat
+        const relativeSpeed = Math.sqrt((o.dx - tiltX)**2 + (o.dy - tiltY)**2);
+        const intensity = Math.min(1 + (relativeSpeed * 0.3) + (collisionHeat * 0.02), 4);
         
-        // Screen shake based on combo
-        const shakeIntensity = Math.min(5 + combo * 0.5, 15);
-        addScreenShake(shakeIntensity, 15);
+        // Create dramatic explosion effects
+        createExplosion(o.x, o.y, o.color, intensity);
+        createExplosion(player.x, player.y, player.color, intensity * 0.8);
         
-        // Obstacle effects
+        // Variable screen shake patterns
+        let shakePattern = 'random';
+        if (intensity > 2) shakePattern = Math.random() > 0.5 ? 'horizontal' : 'vertical';
+        addScreenShake(4 + intensity * 2, 20 + intensity * 5, shakePattern);
+        
+        // Advanced obstacle effects
         o.collisionEffect = true;
-        o.effectTimer = 45;
+        o.effectTimer = 60 + intensity * 10;
         o.hitCount++;
-        o.scale = 1.3; // Pop effect
+        o.scale = 1.2 + intensity * 0.1;
         
-        // Player feedback
-        player.color = "#ff4444";
+        // Player dramatic feedback
+        player.color = intensity > 2 ? "#ff0000" : "#ff4444";
         player.invulnerable = true;
-        player.invulnerabilityTimer = 30; // Brief invulnerability
+        player.invulnerabilityTimer = 45; // Longer invulnerability for bigger hits
         
-        // Obstacle gets faster and changes color after hits
-        if (o.hitCount >= 3) {
-          o.color = `hsl(${Math.random() * 60}, 100%, 50%)`; // Hot colors
-          o.dx *= 1.2;
-          o.dy *= 1.2;
+        // Obstacle evolution with visual changes
+        if (o.hitCount >= 2) {
+          const hue = Math.max(0, 60 - o.hitCount * 15); // Red shift
+          o.color = `hsl(${hue}, 100%, ${50 + Math.min(o.hitCount * 5, 30)}%)`;
+          o.dx *= 1.15;
+          o.dy *= 1.15;
         }
         
-        // Knockback effect
+        // Dynamic knockback based on collision angle and intensity
         const angle = Math.atan2(player.y - o.y, player.x - o.x);
-        const knockbackForce = 3 + combo * 0.5;
+        const knockbackForce = 4 + intensity * 2;
         player.x += Math.cos(angle) * knockbackForce;
         player.y += Math.sin(angle) * knockbackForce;
         
-        // Obstacle rebound
-        o.dx += Math.cos(angle + Math.PI) * 2;
-        o.dy += Math.sin(angle + Math.PI) * 2;
+        // Obstacle dramatic rebound with spin effect
+        o.dx += Math.cos(angle + Math.PI) * (2 + intensity);
+        o.dy += Math.sin(angle + Math.PI) * (2 + intensity);
+        
+        // Add obstacle rotation for visual flair
+        o.rotation = (o.rotation || 0) + (Math.random() - 0.5) * 0.4;
       }
     }
     o.wasColliding = isColliding;
@@ -396,17 +451,20 @@ function update() {
     }
   }
 
-  // Update particles
+  // Update particles and impact waves
   particles = particles.filter(p => {
     p.update();
     return p.life > 0;
   });
-
-  // Update screen shake
-  updateScreenShake();
   
-  // Update combo system
-  updateCombo();
+  impactWaves = impactWaves.filter(wave => {
+    wave.update();
+    return !wave.isDead();
+  });
+
+  // Update screen shake and collision systems
+  updateScreenShake();
+  updateCollisionHeat();
 
   // Update stats display
   timeDisplay.textContent = `Time: ${Math.floor((Date.now() - startTime) / 1000)}s`;
@@ -421,54 +479,85 @@ function draw() {
   
   ctx.clearRect(-screenShake.x, -screenShake.y, canvas.width + Math.abs(screenShake.x) * 2, canvas.height + Math.abs(screenShake.y) * 2);
 
-  // Draw obstacles
+  // Draw obstacles with enhanced effects
   for (let o of obstacles) {
     ctx.save();
     ctx.translate(o.x, o.y);
     ctx.scale(o.scale, o.scale);
     
+    // Add rotation if obstacle has been hit
+    if (o.rotation) {
+      ctx.rotate(o.rotation);
+      o.rotation *= 0.95; // Slow down rotation
+    }
+    
     ctx.beginPath();
     if (o.collisionEffect) {
-      // Flashing effect during collision
-      const flash = Math.sin(o.effectTimer * 0.5) > 0;
-      ctx.fillStyle = flash ? "white" : o.color;
-      ctx.shadowBlur = 20;
-      ctx.shadowColor = "white";
+      // Multi-layered flashing effect
+      const flashIntensity = Math.sin(o.effectTimer * 0.3);
+      const flash = flashIntensity > 0;
+      
+      if (flash) {
+        // Outer white glow
+        ctx.fillStyle = "white";
+        ctx.shadowBlur = 25;
+        ctx.shadowColor = "white";
+        ctx.arc(0, 0, o.r + 2, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Inner color core
+        ctx.fillStyle = o.color;
+        ctx.shadowBlur = 15;
+        ctx.shadowColor = o.color;
+        ctx.arc(0, 0, o.r, 0, Math.PI * 2);
+        ctx.fill();
+      } else {
+        ctx.fillStyle = o.color;
+        ctx.shadowBlur = 12;
+        ctx.shadowColor = o.color;
+        ctx.arc(0, 0, o.r, 0, Math.PI * 2);
+        ctx.fill();
+      }
     } else {
       ctx.fillStyle = o.color;
       ctx.shadowBlur = 8;
       ctx.shadowColor = o.color;
+      ctx.arc(0, 0, o.r, 0, Math.PI * 2);
+      ctx.fill();
     }
-    
-    ctx.arc(0, 0, o.r, 0, Math.PI * 2);
-    ctx.fill();
     ctx.shadowBlur = 0;
     ctx.restore();
   }
+
+  // Draw impact waves
+  impactWaves.forEach(wave => wave.draw());
 
   // Draw particles
   particles.forEach(p => p.draw());
 
-  // Draw player with invulnerability flashing
-  if (!player.invulnerable || Math.floor(Date.now() / 100) % 2) {
+  // Draw player with enhanced invulnerability effect
+  if (!player.invulnerable || Math.floor(Date.now() / 80) % 2) {
     ctx.beginPath();
     ctx.fillStyle = player.color;
     ctx.arc(player.x, player.y, player.radius, 0, Math.PI * 2);
-    ctx.shadowBlur = 15;
+    
+    // Enhanced glow based on collision heat
+    const glowIntensity = 15 + Math.min(collisionHeat * 0.5, 20);
+    ctx.shadowBlur = glowIntensity;
     ctx.shadowColor = player.color;
     ctx.fill();
     ctx.shadowBlur = 0;
-  }
-
-  // Draw combo multiplier effect
-  if (comboTimer > 0) {
-    ctx.save();
-    ctx.font = "16px 'Press Start 2P'";
-    ctx.fillStyle = `rgba(255, 255, 0, ${comboTimer / 60})`;
-    ctx.textAlign = "center";
-    const comboY = 100 + Math.sin(comboTimer * 0.2) * 10;
-    ctx.fillText(`COMBO x${combo}!`, canvas.width / 2, comboY);
-    ctx.restore();
+    
+    // Add danger indicator when collision heat is high
+    if (collisionHeat > 50) {
+      ctx.strokeStyle = "rgba(255, 0, 0, 0.6)";
+      ctx.lineWidth = 3;
+      ctx.setLineDash([5, 5]);
+      ctx.beginPath();
+      ctx.arc(player.x, player.y, player.radius + 8, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
   }
 
   ctx.restore(); // Restore screen shake transform
