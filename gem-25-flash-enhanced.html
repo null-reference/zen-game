@@ -46,25 +46,6 @@
       background: #0097a7;
       transform: scale(1.05);
     }
-    #resetButton {
-      position: absolute;
-      top: 20px;
-      right: 20px;
-      background: #d40000; /* Red button */
-      color: white;
-      border: none;
-      padding: 10px 20px;
-      border-radius: 8px;
-      cursor: pointer;
-      font-size: 0.9em;
-      font-family: 'Press Start 2P', cursive;
-      z-index: 5; /* Below permission, above canvas */
-      transition: background 0.3s ease, transform 0.2s ease;
-    }
-    #resetButton:hover {
-      background: #a70000;
-      transform: scale(1.05);
-    }
     #gameStats {
       position: absolute;
       top: 20px;
@@ -75,7 +56,7 @@
       padding: 0;
       text-align: left;
       font-size: 1em;
-      z-index: 5; /* Below permission, above canvas */
+      z-index: 5; /* Above canvas */
     }
     #gameStats span {
       display: block;
@@ -91,7 +72,6 @@
   <p>Tap to enable motion sensors and start dodging!</p>
   <button id="startButton">Start Game</button>
 </div>
-<button id="resetButton" style="display: none;">Reset Game</button>
 <div id="gameStats">
   <span id="timeDisplay">Time: 0s</span>
   <span id="collisionDisplay">Collisions: 0</span>
@@ -133,9 +113,8 @@ const timeDisplay = document.getElementById("timeDisplay");
 const collisionDisplay = document.getElementById("collisionDisplay");
 const permissionScreen = document.getElementById("permission");
 const startButton = document.getElementById("startButton");
-const resetButton = document.getElementById("resetButton"); // Get reference to the single reset button
 
-// --- Game Initialization and Reset ---
+// --- Game Initialization (Simplified, no explicit reset) ---
 function initializeGame() {
   player.x = canvas.width / 2;
   player.y = canvas.height / 2;
@@ -156,7 +135,6 @@ function initializeGame() {
   }));
 
   permissionScreen.style.display = "none"; // Hide permission screen
-  resetButton.style.display = "block";    // Show reset button
 
   timeDisplay.textContent = `Time: 0s`;
   collisionDisplay.textContent = `Collisions: 0`;
@@ -190,7 +168,6 @@ function enableMotion() {
 }
 
 startButton.addEventListener("click", enableMotion);
-resetButton.addEventListener("click", initializeGame); // Reset button calls initializeGame
 
 // --- Tilt Handling ---
 function handleTilt(e) {
@@ -322,9 +299,8 @@ function loop() {
   animationFrameId = requestAnimationFrame(loop);
 }
 
-// Initial state: Show permission screen, hide reset button
+// Initial state: Show permission screen
 permissionScreen.style.display = "block";
-resetButton.style.display = "none"; // Ensure reset button is hidden initially
 
 // Handle window resizing
 window.addEventListener('resize', () => {
