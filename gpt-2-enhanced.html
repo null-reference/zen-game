@@ -31,6 +31,7 @@
       box-shadow: 0 0 20px rgba(255,255,255,0.2);
       cursor: pointer;
       transition: background 0.3s;
+      z-index: 10;
     }
 
     #permission:hover {
@@ -44,6 +45,8 @@
       color: white;
       font-size: 16px;
       z-index: 10;
+      text-align: right;
+      white-space: pre-line;
     }
   </style>
 </head>
@@ -106,4 +109,144 @@ function createParticles(x, y, color) {
     particles.push({
       x, y,
       dx: (Math.random() - 0.5) * 4,
-      dy: (Math.random() - 0
+      dy: (Math.random() - 0.5) * 4,
+      life: 1,
+      color
+    });
+  }
+}
+
+async function enableMotion() {
+  try {
+    if (typeof DeviceOrientationEvent?.requestPermission === "function") {
+      const response = await DeviceOrientationEvent.requestPermission();
+      if (response === "granted") {
+        window.addEventListener("deviceorientation", handleTilt, true);
+        startGame();
+      } else {
+        alert("Motion access denied. Game cannot start.");
+      }
+    } else {
+      window.addEventListener("deviceorientation", handleTilt, true);
+      startGame();
+    }
+  } catch (err) {
+    alert("Motion permission request failed. Try again.");
+    console.error(err);
+  }
+}
+
+function handleTilt(e) {
+  if (!hasBaseline) {
+    initialGamma = e.gamma || 0;
+    initialBeta = e.beta || 0;
+    hasBaseline = true;
+  }
+  targetTiltX = (e.gamma || 0) - initialGamma;
+  targetTiltY = (e.beta || 0) - initialBeta;
+}
+
+function checkCollision(p, o) {
+  const dx = p.x - o.x;
+  const dy = p.y - o.y;
+  return Math.hypot(dx, dy) < p.radius + o.r;
+}
+
+function update() {
+  if (!gameStarted || gameOver) return;
+
+  const elapsed = (Date.now() - startTime) / 1000;
+  if (elapsed > GAME_DURATION) {
+    gameOver = true;
+    overlay.innerHTML = `Game Over\nTime: ${GAME_DURATION}s\nCollisions: ${collisionCount}`;
+    return;
+  }
+
+  tiltX += (targetTiltX - tiltX) * 0.1;
+  tiltY += (targetTiltY - tiltY) * 0.1;
+
+  player.x += tiltX * 0.5;
+  player.y += tiltY * 0.5;
+
+  player.x = Math.max(player.radius, Math.min(canvas.width - player.radius, player.x));
+  player.y = Math.max(player.radius, Math.min(canvas.height - player.radius, player.y));
+
+  for (let o of obstacles) {
+    o.x += o.dx;
+    o.y += o.dy;
+
+    if (o.x < 0 || o.x > canvas.width) o.dx *= -1;
+    if (o.y < 0 || o.y > canvas.height) o.dy *= -1;
+
+    const isColliding = checkCollision(player, o);
+    if (isColliding && !o.wasColliding) {
+      const angle = Math.atan2(o.y - player.y, o.x - player.x);
+      const speed = 2 + Math.random();
+      o.dx = Math.cos(angle) * speed + (Math.random() - 0.5) * 0.5;
+      o.dy = Math.sin(angle) * speed + (Math.random() - 0.5) * 0.5;
+      createParticles(o.x, o.y, o.color);
+      collisionCount++;
+    }
+    o.wasColliding = isColliding;
+  }
+
+  particles = particles.filter(p => p.life > 0).map(p => {
+    p.x += p.dx;
+    p.y += p.dy;
+    p.life -= 0.02;
+    return p;
+  });
+}
+
+function draw() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  for (let o of obstacles) {
+    ctx.beginPath();
+    ctx.fillStyle = o.color;
+    ctx.arc(o.x, o.y, o.r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  for (let p of particles) {
+    ctx.beginPath();
+    ctx.fillStyle = p.color;
+    ctx.globalAlpha = p.life;
+    ctx.arc(p.x, p.y, 2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+
+  ctx.beginPath();
+  ctx.fillStyle = player.color;
+  ctx.arc(player.x, player.y, player.radius, 0, Math.PI * 2);
+  ctx.fill();
+
+  if (!gameOver) {
+    const elapsed = Math.floor((Date.now() - startTime) / 1000);
+    overlay.innerText = `Time: ${elapsed}s\nCollisions: ${collisionCount}`;
+  }
+}
+
+function loop() {
+  update();
+  draw();
+  requestAnimationFrame(loop);
+}
+
+function startGame() {
+  document.getElementById("permission").style.display = "none";
+  gameStarted = true;
+  gameOver = false;
+  startTime = Date.now();
+  collisionCount = 0;
+  hasBaseline = false;
+  obstacles = createObstacles();
+}
+
+document.getElementById("permission").addEventListener("click", enableMotion);
+
+loop();
+</script>
+</body>
+</html>
