@@ -44,15 +44,14 @@
         #spaceship {
             position: absolute;
             bottom: 20px;
-            left: 50%;
+            left: calc(50% - 20px);
             width: 40px;
             height: 40px;
             background: linear-gradient(45deg, #00ffff, #0080ff);
             clip-path: polygon(50% 0%, 0% 100%, 100% 100%);
             box-shadow: 0 0 20px rgba(0, 255, 255, 0.6);
-            transition: left 0.05s ease-out;
+            transition: none;
             z-index: 10;
-            transform: translateX(-50%);
         }
 
         .projectile {
@@ -166,8 +165,9 @@
             <h1>🚀 SPACESHIP DODGE</h1>
             <p>Tilt your device left and right to move your spaceship!<br>
             Avoid the falling projectiles to survive.<br><br>
-            <small>On desktop: Use arrow keys or A/D keys</small></p>
-            <button class="btn" onclick="startGame()">START GAME</button>
+            <small>📱 Mobile: Grant motion permission when prompted<br>
+            💻 Desktop: Use arrow keys or A/D keys</small></p>
+            <button class="btn" onclick="requestPermissionsAndStart()">START GAME</button>
         </div>
 
         <div id="gameOverScreen" style="display: none;">
@@ -219,40 +219,72 @@
         function initializeSpaceship() {
             containerWidth = window.innerWidth;
             containerHeight = window.innerHeight;
-            gameState.spaceshipX = containerWidth / 2; // Center spaceship
+            gameState.spaceshipX = (containerWidth / 2) - 20; // Center spaceship (minus half width)
             updateSpaceshipPosition();
         }
 
         // Update spaceship position
         function updateSpaceshipPosition() {
-            const minX = 40; // Half spaceship width
-            const maxX = containerWidth - 40; // Half spaceship width
+            const minX = 0;
+            const maxX = containerWidth - 40; // Spaceship width
             gameState.spaceshipX = Math.max(minX, Math.min(maxX, gameState.spaceshipX));
             spaceship.style.left = gameState.spaceshipX + 'px';
         }
 
+        // Permission request function
+        async function requestPermissionsAndStart() {
+            orientationStatus.textContent = 'Requesting permissions...';
+            
+            try {
+                // Check if we're on iOS and need to request permission
+                if (typeof DeviceOrientationEvent !== 'undefined' && 
+                    typeof DeviceOrientationEvent.requestPermission === 'function') {
+                    
+                    const permission = await DeviceOrientationEvent.requestPermission();
+                    if (permission === 'granted') {
+                        orientationStatus.textContent = 'Motion permission granted!';
+                        gameState.orientationSupported = true;
+                    } else {
+                        orientationStatus.textContent = 'Motion permission denied - using keyboard';
+                        gameState.orientationSupported = false;
+                    }
+                } else {
+                    // For Android and other devices
+                    orientationStatus.textContent = 'Setting up motion controls...';
+                    gameState.orientationSupported = true;
+                }
+                
+                // Small delay to show the status message
+                setTimeout(() => {
+                    startGame();
+                }, 500);
+                
+            } catch (error) {
+                console.log('Permission request failed:', error);
+                orientationStatus.textContent = 'Using keyboard controls';
+                gameState.orientationSupported = false;
+                startGame();
+            }
+        }
+
         // Device orientation controls
         function handleOrientation(event) {
-            if (!gameState.isPlaying) return;
+            if (!gameState.isPlaying || !gameState.orientationSupported) return;
             
-            // Get gamma (left-right tilt) and beta for fallback
-            let tilt = event.gamma; // -90 to 90 degrees (left-right)
+            // Get gamma (left-right tilt)
+            const gamma = event.gamma; // -90 to 90 degrees
             
-            // Fallback to beta if gamma not available
-            if (tilt === null || tilt === undefined) {
-                tilt = event.beta; // -180 to 180 degrees
-            }
+            if (gamma === null || gamma === undefined) return;
             
-            if (tilt === null || tilt === undefined) return;
-            
-            // Normalize and apply sensitivity
-            const sensitivity = 4;
-            const movement = tilt * sensitivity;
+            // Apply movement based on tilt
+            const sensitivity = 5;
+            const movement = gamma * sensitivity;
             
             gameState.spaceshipX += movement;
             updateSpaceshipPosition();
             
-            orientationStatus.textContent = `Tilt: ${Math.round(tilt)}° (${gameState.orientationSupported ? 'Active' : 'Testing'})`;
+            // Show debug info
+            orientationStatus.textContent = `Tilt: ${Math.round(gamma)}° | Score: ${gameState.score}`;
         }
 
         // Keyboard controls for desktop
@@ -404,47 +436,36 @@
             // Remove any existing listeners
             window.removeEventListener('deviceorientation', handleOrientation);
             
-            // Check if device orientation is supported
-            if ('DeviceOrientationEvent' in window) {
-                // Request permission on iOS 13+
-                if (typeof DeviceOrientationEvent.requestPermission === 'function') {
-                    DeviceOrientationEvent.requestPermission()
-                        .then(response => {
-                            if (response === 'granted') {
-                                window.addEventListener('deviceorientation', handleOrientation, true);
-                                gameState.orientationSupported = true;
-                                orientationStatus.textContent = 'Tilt to move! (Permission granted)';
-                            } else {
-                                orientationStatus.textContent = 'Orientation denied - Use arrow keys';
-                            }
-                        })
-                        .catch(() => {
-                            orientationStatus.textContent = 'Use arrow keys or A/D';
-                        });
-                } else {
-                    // For other devices
-                    window.addEventListener('deviceorientation', handleOrientation, true);
-                    gameState.orientationSupported = true;
-                    orientationStatus.textContent = 'Tilt to move!';
-                }
+            if (gameState.orientationSupported) {
+                // Add the orientation listener
+                window.addEventListener('deviceorientation', handleOrientation, true);
+                orientationStatus.textContent = 'Tilt to move!';
             } else {
                 orientationStatus.textContent = 'Use arrow keys or A/D';
             }
 
-            // Also add touch support for mobile debugging
+            // Add touch support as backup
             let touchStartX = 0;
+            let isTouching = false;
+
             gameContainer.addEventListener('touchstart', (e) => {
+                if (!gameState.isPlaying) return;
                 touchStartX = e.touches[0].clientX;
+                isTouching = true;
             });
 
             gameContainer.addEventListener('touchmove', (e) => {
-                if (!gameState.isPlaying) return;
+                if (!gameState.isPlaying || !isTouching) return;
                 e.preventDefault();
                 const touchX = e.touches[0].clientX;
                 const deltaX = touchX - touchStartX;
-                gameState.spaceshipX += deltaX * 0.5;
+                gameState.spaceshipX += deltaX * 0.8;
                 updateSpaceshipPosition();
                 touchStartX = touchX;
+            });
+
+            gameContainer.addEventListener('touchend', () => {
+                isTouching = false;
             });
         }
 
@@ -455,7 +476,7 @@
         }
 
         function restartGame() {
-            startGame();
+            requestPermissionsAndStart();
         }
 
         // Initialize
