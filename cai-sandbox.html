@@ -42,16 +42,17 @@
         }
 
         #spaceship {
-            position: absolute;
+            position: fixed;
             bottom: 20px;
-            left: calc(50% - 20px);
+            left: 50%;
             width: 40px;
             height: 40px;
             background: linear-gradient(45deg, #00ffff, #0080ff);
             clip-path: polygon(50% 0%, 0% 100%, 100% 100%);
             box-shadow: 0 0 20px rgba(0, 255, 255, 0.6);
-            transition: none;
+            transition: filter 0.3s ease, transform 0.3s ease;
             z-index: 10;
+            margin-left: -20px;
         }
 
         .projectile {
@@ -178,6 +179,14 @@
     </div>
 
     <script>
+        // Game configuration - easily adjustable
+        const gameConfig = {
+            initialSpawnRate: 0.005,      // Starting spawn rate (lower = fewer projectiles)
+            spawnRateIncrease: 0.0001,    // How much spawn rate increases per frame
+            maxSpawnRate: 0.03,           // Maximum spawn rate cap
+            difficultyIncreaseRate: 0.0005 // How fast the game gets harder
+        };
+
         let gameState = {
             isPlaying: false,
             score: 0,
@@ -185,7 +194,7 @@
             spaceshipX: 0,
             projectiles: [],
             gameSpeed: 2,
-            spawnRate: 0.02,
+            spawnRate: gameConfig.initialSpawnRate,
             orientationSupported: false
         };
 
@@ -219,16 +228,23 @@
         function initializeSpaceship() {
             containerWidth = window.innerWidth;
             containerHeight = window.innerHeight;
-            gameState.spaceshipX = (containerWidth / 2) - 20; // Center spaceship (minus half width)
+            gameState.spaceshipX = containerWidth / 2; // Center position
             updateSpaceshipPosition();
+            
+            // Force visibility
+            spaceship.style.display = 'block';
+            spaceship.style.visibility = 'visible';
         }
 
         // Update spaceship position
         function updateSpaceshipPosition() {
-            const minX = 0;
-            const maxX = containerWidth - 40; // Spaceship width
+            const minX = 20; // Half spaceship width
+            const maxX = containerWidth - 20; // Half spaceship width  
             gameState.spaceshipX = Math.max(minX, Math.min(maxX, gameState.spaceshipX));
+            
+            // Update position from center
             spaceship.style.left = gameState.spaceshipX + 'px';
+            spaceship.style.marginLeft = '-20px'; // Center the ship
         }
 
         // Permission request function
@@ -343,17 +359,25 @@
                     continue;
                 }
 
-                // Collision detection
+                // Collision detection with visual feedback
                 if (checkCollision(projectile)) {
                     projectile.element.remove();
                     gameState.projectiles.splice(i, 1);
                     gameState.lives--;
                     
-                    // Flash effect
-                    spaceship.style.filter = 'brightness(0.3)';
+                    // Enhanced flash effect with red tint
+                    spaceship.style.filter = 'brightness(0.3) sepia(1) hue-rotate(-50deg) saturate(3)';
+                    spaceship.style.transform = 'scale(1.2)';
                     setTimeout(() => {
                         spaceship.style.filter = 'brightness(1)';
-                    }, 200);
+                        spaceship.style.transform = 'scale(1)';
+                    }, 300);
+                    
+                    // Add screen shake effect
+                    gameContainer.style.transform = 'translate(' + (Math.random() * 4 - 2) + 'px, ' + (Math.random() * 4 - 2) + 'px)';
+                    setTimeout(() => {
+                        gameContainer.style.transform = 'translate(0, 0)';
+                    }, 100);
                     
                     if (gameState.lives <= 0) {
                         endGame();
@@ -363,24 +387,29 @@
         }
 
         function checkCollision(projectile) {
+            // Get actual spaceship bounds (triangle shape considerations)
             const spaceshipRect = {
-                x: gameState.spaceshipX,
-                y: containerHeight - 60,
-                width: 40,
-                height: 40
+                x: gameState.spaceshipX - 15, // Slightly smaller hit area for fairness
+                y: containerHeight - 55,      // Adjust for spaceship height
+                width: 30,                    // Smaller than visual width (40px)
+                height: 30                    // Smaller than visual height (40px)
             };
 
+            // Projectile bounds (also slightly smaller)
             const projectileRect = {
-                x: projectile.x,
-                y: projectile.y,
-                width: 20,
-                height: 20
+                x: projectile.x + 2,          // Add small margin
+                y: projectile.y + 2,          // Add small margin  
+                width: 16,                    // Smaller than visual (20px)
+                height: 16                    // Smaller than visual (20px)
             };
 
-            return (spaceshipRect.x < projectileRect.x + projectileRect.width &&
-                    spaceshipRect.x + spaceshipRect.width > projectileRect.x &&
-                    spaceshipRect.y < projectileRect.y + projectileRect.height &&
-                    spaceshipRect.y + spaceshipRect.height > projectileRect.y);
+            // More precise collision detection with overlap threshold
+            const overlapX = Math.max(0, Math.min(spaceshipRect.x + spaceshipRect.width, projectileRect.x + projectileRect.width) - Math.max(spaceshipRect.x, projectileRect.x));
+            const overlapY = Math.max(0, Math.min(spaceshipRect.y + spaceshipRect.height, projectileRect.y + projectileRect.height) - Math.max(spaceshipRect.y, projectileRect.y));
+            
+            // Require significant overlap for collision (not just touching edges)
+            const minOverlap = 8;
+            return overlapX >= minOverlap && overlapY >= minOverlap;
         }
 
         // Game loop
@@ -389,7 +418,7 @@
 
             handleKeyboardControls();
 
-            // Spawn projectiles
+            // Spawn projectiles based on current spawn rate
             if (Math.random() < gameState.spawnRate) {
                 createProjectile();
             }
@@ -397,9 +426,13 @@
             updateProjectiles();
             updateUI();
 
-            // Increase difficulty
-            gameState.gameSpeed += 0.001;
-            gameState.spawnRate += 0.0001;
+            // Gradually increase difficulty
+            gameState.gameSpeed += gameConfig.difficultyIncreaseRate;
+            
+            // Increase spawn rate over time but cap it
+            if (gameState.spawnRate < gameConfig.maxSpawnRate) {
+                gameState.spawnRate += gameConfig.spawnRateIncrease;
+            }
 
             requestAnimationFrame(gameLoop);
         }
@@ -407,6 +440,9 @@
         function updateUI() {
             scoreElement.textContent = gameState.score;
             livesElement.textContent = gameState.lives;
+            
+            // Show current difficulty (optional debug info)
+            // orientationStatus.textContent = `Spawn Rate: ${(gameState.spawnRate * 1000).toFixed(1)}/1000`;
         }
 
         // Game state management
