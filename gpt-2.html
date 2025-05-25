@@ -3,74 +3,160 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Gyro Avoidance Game</title>
+  <title>Gyro Collision Game</title>
   <style>
     html, body {
       margin: 0;
-      padding: 0;
-      background: black;
       overflow: hidden;
+      background: black;
     }
     canvas {
       display: block;
     }
-    #resetBtn {
+    #permission {
       position: absolute;
-      top: 10px;
-      right: 10px;
-      background: rgba(255,255,255,0.2);
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: #222;
       color: white;
-      border: none;
-      padding: 6px 10px;
-      border-radius: 6px;
-      z-index: 10;
+      padding: 20px 30px;
+      border-radius: 12px;
+      font-family: sans-serif;
+      display: none;
+      cursor: pointer;
     }
   </style>
 </head>
 <body>
-  <canvas id="canvas"></canvas>
-  <button id="resetBtn">↻</button>
+<canvas id="canvas"></canvas>
+<div id="permission">Tap to enable motion</div>
+<script>
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
 
-  <script>
-    const canvas = document.getElementById("canvas");
-    const ctx = canvas.getContext("2d");
+let targetTiltX = 0;
+let targetTiltY = 0;
+let tiltX = 0;
+let tiltY = 0;
 
-    let width = canvas.width = window.innerWidth;
-    let height = canvas.height = window.innerHeight;
+let initialGamma = 0;
+let initialBeta = 0;
+let hasBaseline = false;
 
-    let player = { x: width/2, y: height/2, r: 15 };
-    let baseGamma = 0, baseBeta = 0;
-    let hasBaseline = false;
-    let tiltX = 0, tiltY = 0;
+function enableMotion() {
+  if (typeof DeviceOrientationEvent.requestPermission === "function") {
+    DeviceOrientationEvent.requestPermission().then(response => {
+      if (response === "granted") {
+        window.addEventListener("deviceorientation", handleTilt, true);
+        document.getElementById("permission").style.display = "none";
+      }
+    });
+  } else {
+    window.addEventListener("deviceorientation", handleTilt, true);
+    document.getElementById("permission").style.display = "none";
+  }
+}
+document.getElementById("permission").style.display = "block";
+document.getElementById("permission").addEventListener("click", enableMotion);
 
-    let collisions = 0;
-    let startTime = Date.now();
+function handleTilt(e) {
+  if (!hasBaseline) {
+    initialGamma = e.gamma || 0;
+    initialBeta = e.beta || 0;
+    hasBaseline = true;
+  }
 
-    let obstacles = Array.from({ length: 10 }, () => ({
-      x: Math.random() * width,
-      y: Math.random() * height,
-      dx: (Math.random() - 0.5) * 1.5,
-      dy: (Math.random() - 0.5) * 1.5,
-      r: 10 + Math.random() * 10
-    }));
+  targetTiltX = ((e.gamma || 0) - initialGamma) || 0;
+  targetTiltY = ((e.beta || 0) - initialBeta) || 0;
+}
 
-    function update() {
-      player.x += tiltX;
-      player.y += tiltY;
+let player = {
+  x: canvas.width / 2,
+  y: canvas.height / 2,
+  radius: 14,
+  color: "white"
+};
 
-      // Stay in bounds
-      player.x = Math.max(player.r, Math.min(width - player.r, player.x));
-      player.y = Math.max(player.r, Math.min(height - player.r, player.y));
+let collisionCount = 0;
+let startTime = Date.now();
 
-      for (let o of obstacles) {
-        o.x += o.dx;
-        o.y += o.dy;
+let obstacles = Array.from({ length: 20 }).map(() => ({
+  x: Math.random() * canvas.width,
+  y: Math.random() * canvas.height,
+  r: 10 + Math.random() * 10,
+  dx: -1 + Math.random() * 2,
+  dy: -1 + Math.random() * 2,
+  color: `hsl(${Math.random() * 360}, 70%, 60%)`,
+  wasColliding: false
+}));
 
-        if (o.x < 0 || o.x > width) o.dx *= -1;
-        if (o.y < 0 || o.y > height) o.dy *= -1;
+function checkCollision(p, o) {
+  const dx = p.x - o.x;
+  const dy = p.y - o.y;
+  const distance = Math.sqrt(dx * dx + dy * dy);
+  return distance < p.radius + o.r;
+}
 
-        let dx = o.x - player.x;
-        let dy = o.y - player.y;
-        let dist = Math.sqrt(dx*dx + dy*dy);
-        if (dist < player.r + o.r) {
-          o.dx = dx / dist * 2;
+function update() {
+  tiltX += (targetTiltX - tiltX) * 0.1;
+  tiltY += (targetTiltY - tiltY) * 0.1;
+
+  player.x += tiltX * 0.5;
+  player.y += tiltY * 0.5;
+
+  player.x = Math.max(player.radius, Math.min(canvas.width - player.radius, player.x));
+  player.y = Math.max(player.radius, Math.min(canvas.height - player.radius, player.y));
+
+  for (let o of obstacles) {
+    o.x += o.dx;
+    o.y += o.dy;
+
+    if (o.x < 0 || o.x > canvas.width) o.dx *= -1;
+    if (o.y < 0 || o.y > canvas.height) o.dy *= -1;
+
+    const isColliding = checkCollision(player, o);
+    if (isColliding && !o.wasColliding) {
+      const angle = Math.atan2(o.y - player.y, o.x - player.x);
+      const speed = 2 + Math.random();
+      o.dx = Math.cos(angle) * speed + (Math.random() - 0.5) * 0.5;
+      o.dy = Math.sin(angle) * speed + (Math.random() - 0.5) * 0.5;
+      collisionCount++;
+    }
+    o.wasColliding = isColliding;
+  }
+}
+
+function draw() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  for (let o of obstacles) {
+    ctx.beginPath();
+    ctx.fillStyle = o.color;
+    ctx.arc(o.x, o.y, o.r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  ctx.beginPath();
+  ctx.fillStyle = player.color;
+  ctx.arc(player.x, player.y, player.radius, 0, Math.PI * 2);
+  ctx.fill();
+
+  const elapsedSeconds = Math.floor((Date.now() - startTime) / 1000);
+  ctx.fillStyle = "white";
+  ctx.font = "18px sans-serif";
+  ctx.fillText(`Time: ${elapsedSeconds}s`, 10, 25);
+  ctx.fillText(`Collisions: ${collisionCount}`, 10, 45);
+}
+
+function loop() {
+  update();
+  draw();
+  requestAnimationFrame(loop);
+}
+loop();
+</script>
+</body>
+</html>
