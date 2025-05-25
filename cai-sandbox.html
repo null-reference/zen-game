@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Zen Flow</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            user-select: none;
+            -webkit-user-select: none;
+            -webkit-touch-callout: none;
+        }
+
+        body {
+            font-family: 'Arial', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            overflow: hidden;
+            height: 100vh;
+            color: white;
+        }
+
+        #gameCanvas {
+            display: block;
+            background: radial-gradient(circle at center, rgba(255,255,255,0.1) 0%, transparent 70%);
+            touch-action: none;
+        }
+
+        #permissionScreen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.9);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            padding: 20px;
+            z-index: 1000;
+        }
+
+        #permissionScreen h1 {
+            font-size: 2.5em;
+            margin-bottom: 20px;
+            background: linear-gradient(45deg, #ff6b6b, #4ecdc4, #45b7d1);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        #permissionScreen p {
+            font-size: 1.2em;
+            margin-bottom: 30px;
+            opacity: 0.8;
+            line-height: 1.6;
+        }
+
+        #enableButton {
+            padding: 15px 30px;
+            font-size: 1.2em;
+            background: linear-gradient(45deg, #ff6b6b, #4ecdc4);
+            border: none;
+            border-radius: 50px;
+            color: white;
+            cursor: pointer;
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+        }
+
+        #enableButton:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(0,0,0,0.4);
+        }
+
+        #gameHUD {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            z-index: 100;
+            font-size: 1.2em;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+        }
+
+        #instructions {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            text-align: center;
+            opacity: 0.7;
+            font-size: 0.9em;
+            z-index: 100;
+        }
+
+        .particle-trail {
+            position: absolute;
+            pointer-events: none;
+            border-radius: 50%;
+            animation: fadeOut 2s ease-out forwards;
+        }
+
+        @keyframes fadeOut {
+            from { opacity: 0.8; transform: scale(1); }
+            to { opacity: 0; transform: scale(0.3); }
+        }
+
+        .error-message {
+            color: #ff6b6b;
+            margin-top: 15px;
+            font-size: 0.9em;
+        }
+    </style>
+</head>
+<body>
+    <div id="permissionScreen">
+        <h1>🧘 Zen Flow</h1>
+        <p>Tilt your device to guide flowing particles through a peaceful zen garden. Experience the calming physics of liquid motion.</p>
+        <button id="enableButton">Enable Motion Sensors</button>
+        <div id="errorMessage" class="error-message" style="display: none;"></div>
+    </div>
+
+    <canvas id="gameCanvas"></canvas>
+    
+    <div id="gameHUD">
+        <div>Particles: <span id="particleCount">0</span></div>
+        <div>Zen Score: <span id="zenScore">0</span></div>
+    </div>
+
+    <div id="instructions">
+        Tilt your device gently • Collect flowing energy • Find your zen
+    </div>
+
+    <script>
+        class ZenFlowGame {
+            constructor() {
+                this.canvas = document.getElementById('gameCanvas');
+                this.ctx = this.canvas.getContext('2d');
+                this.permissionScreen = document.getElementById('permissionScreen');
+                this.enableButton = document.getElementById('enableButton');
+                this.errorMessage = document.getElementById('errorMessage');
+                
+                this.particles = [];
+                this.collectors = [];
+                this.gravity = { x: 0, y: 0.3 };
+                this.gyroData = { x: 0, y: 0 };
+                this.zenScore = 0;
+                this.particleCount = 0;
+                this.lastSpawn = 0;
+                this.colors = [
+                    '#ff6b6b', '#4ecdc4', '#45b7d1', '#96ceb4', 
+                    '#feca57', '#ff9ff3', '#54a0ff', '#5f27cd'
+                ];
+                
+                this.setupCanvas();
+                this.setupEventListeners();
+                this.createCollectors();
+            }
+
+            setupCanvas() {
+                const resize = () => {
+                    this.canvas.width = window.innerWidth;
+                    this.canvas.height = window.innerHeight;
+                };
+                resize();
+                window.addEventListener('resize', resize);
+            }
+
+            setupEventListeners() {
+                this.enableButton.addEventListener('click', () => this.requestPermissions());
+                
+                // Touch interaction for spawning particles
+                this.canvas.addEventListener('touchstart', (e) => {
+                    e.preventDefault();
+                    const touch = e.touches[0];
+                    const rect = this.canvas.getBoundingClientRect();
+                    const x = touch.clientX - rect.left;
+                    const y = touch.clientY - rect.top;
+                    this.spawnParticles(x, y, 5);
+                });
+            }
+
+            async requestPermissions() {
+                try {
+                    if (typeof DeviceMotionEvent.requestPermission === 'function') {
+                        const permission = await DeviceMotionEvent.requestPermission();
+                        if (permission === 'granted') {
+                            this.startGyroscope();
+                        } else {
+                            this.showError('Motion permission denied. Please allow motion access in your browser settings.');
+                        }
+                    } else {
+                        // Android or older browsers
+                        this.startGyroscope();
+                    }
+                } catch (error) {
+                    this.showError('Error accessing motion sensors: ' + error.message);
+                }
+            }
+
+            startGyroscope() {
+                window.addEventListener('deviceorientation', (e) => {
+                    // Convert device orientation to gravity values
+                    this.gyroData.x = (e.gamma || 0) / 90; // -1 to 1
+                    this.gyroData.y = (e.beta || 0) / 90;  // -1 to 1
+                    
+                    // Apply gyroscope data to gravity
+                    this.gravity.x = this.gyroData.x * 0.5;
+                    this.gravity.y = 0.3 + (this.gyroData.y * 0.3);
+                });
+
+                this.permissionScreen.style.display = 'none';
+                this.startGame();
+            }
+
+            showError(message) {
+                this.errorMessage.textContent = message;
+                this.errorMessage.style.display = 'block';
+            }
+
+            startGame() {
+                this.gameLoop();
+                this.spawnLoop();
+            }
+
+            createCollectors() {
+                // Create zen collection zones
+                for (let i = 0; i < 4; i++) {
+                    this.collectors.push({
+                        x: Math.random() * this.canvas.width,
+                        y: Math.random() * this.canvas.height,
+                        radius: 40 + Math.random() * 20,
+                        color: this.colors[Math.floor(Math.random() * this.colors.length)],
+                        pulsePhase: Math.random() * Math.PI * 2,
+                        collected: 0
+                    });
+                }
+            }
+
+            spawnParticles(x, y, count = 1) {
+                for (let i = 0; i < count; i++) {
+                    this.particles.push({
+                        x: x + (Math.random() - 0.5) * 20,
+                        y: y + (Math.random() - 0.5) * 20,
+                        vx: (Math.random() - 0.5) * 2,
+                        vy: (Math.random() - 0.5) * 2,
+                        radius: 3 + Math.random() * 4,
+                        color: this.colors[Math.floor(Math.random() * this.colors.length)],
+                        life: 1.0,
+                        trail: []
+                    });
+                }
+                this.particleCount += count;
+                this.updateHUD();
+            }
+
+            spawnLoop() {
+                // Auto-spawn particles periodically
+                setInterval(() => {
+                    if (this.particles.length < 100) {
+                        const spawnX = Math.random() * this.canvas.width;
+                        const spawnY = -10;
+                        this.spawnParticles(spawnX, spawnY, Math.floor(Math.random() * 3) + 1);
+                    }
+                }, 1000 + Math.random() * 2000);
+            }
+
+            updateParticles() {
+                for (let i = this.particles.length - 1; i >= 0; i--) {
+                    const p = this.particles[i];
+                    
+                    // Apply physics
+                    p.vx += this.gravity.x;
+                    p.vy += this.gravity.y;
+                    
+                    // Add some fluid resistance
+                    p.vx *= 0.98;
+                    p.vy *= 0.98;
+                    
+                    // Update position
+                    p.x += p.vx;
+                    p.y += p.vy;
+                    
+                    // Add trail point
+                    p.trail.push({ x: p.x, y: p.y, age: 0 });
+                    if (p.trail.length > 8) p.trail.shift();
+                    
+                    // Age trail
+                    p.trail.forEach(point => point.age++);
+                    
+                    // Boundary collision with gentle bounce
+                    if (p.x < p.radius || p.x > this.canvas.width - p.radius) {
+                        p.vx *= -0.6;
+                        p.x = Math.max(p.radius, Math.min(this.canvas.width - p.radius, p.x));
+                    }
+                    if (p.y < p.radius || p.y > this.canvas.height - p.radius) {
+                        p.vy *= -0.6;
+                        p.y = Math.max(p.radius, Math.min(this.canvas.height - p.radius, p.y));
+                    }
+                    
+                    // Check collector collision
+                    this.collectors.forEach(collector => {
+                        const dx = p.x - collector.x;
+                        const dy = p.y - collector.y;
+                        const distance = Math.sqrt(dx * dx + dy * dy);
+                        
+                        if (distance < collector.radius + p.radius) {
+                            // Gentle attraction towards collector center
+                            const force = 0.1;
+                            p.vx += -dx * force / distance;
+                            p.vy += -dy * force / distance;
+                            
+                            if (distance < collector.radius * 0.5) {
+                                // Particle collected
+                                this.particles.splice(i, 1);
+                                collector.collected++;
+                                this.zenScore += 10;
+                                this.updateHUD();
+                                this.createZenEffect(collector.x, collector.y);
+                                return;
+                            }
+                        }
+                    });
+                    
+                    // Remove particles that are too old or off-screen
+                    if (p.y > this.canvas.height + 100) {
+                        this.particles.splice(i, 1);
+                    }
+                }
+            }
+
+            createZenEffect(x, y) {
+                // Create beautiful particle burst effect
+                for (let i = 0; i < 8; i++) {
+                    const angle = (i / 8) * Math.PI * 2;
+                    const speed = 2 + Math.random() * 3;
+                    setTimeout(() => {
+                        const effect = document.createElement('div');
+                        effect.className = 'particle-trail';
+                        effect.style.left = x + 'px';
+                        effect.style.top = y + 'px';
+                        effect.style.width = '6px';
+                        effect.style.height = '6px';
+                        effect.style.background = this.colors[Math.floor(Math.random() * this.colors.length)];
+                        effect.style.transform = `translate(${Math.cos(angle) * 20}px, ${Math.sin(angle) * 20}px)`;
+                        document.body.appendChild(effect);
+                        
+                        setTimeout(() => effect.remove(), 2000);
+                    }, i * 50);
+                }
+            }
+
+            drawParticles() {
+                this.particles.forEach(p => {
+                    // Draw trail
+                    p.trail.forEach((point, index) => {
+                        const alpha = (1 - point.age / 8) * 0.3;
+                        const size = p.radius * (1 - point.age / 8) * 0.5;
+                        
+                        this.ctx.globalAlpha = alpha;
+                        this.ctx.fillStyle = p.color;
+                        this.ctx.beginPath();
+                        this.ctx.arc(point.x, point.y, size, 0, Math.PI * 2);
+                        this.ctx.fill();
+                    });
+                    
+                    // Draw main particle with glow
+                    this.ctx.globalAlpha = 1;
+                    this.ctx.shadowColor = p.color;
+                    this.ctx.shadowBlur = 10;
+                    this.ctx.fillStyle = p.color;
+                    this.ctx.beginPath();
+                    this.ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+                    this.ctx.fill();
+                    this.ctx.shadowBlur = 0;
+                });
+            }
+
+            drawCollectors() {
+                this.collectors.forEach(collector => {
+                    const time = Date.now() * 0.001;
+                    const pulse = Math.sin(time * 2 + collector.pulsePhase) * 0.2 + 1;
+                    const currentRadius = collector.radius * pulse;
+                    
+                    // Outer glow
+                    this.ctx.globalAlpha = 0.3;
+                    this.ctx.fillStyle = collector.color;
+                    this.ctx.beginPath();
+                    this.ctx.arc(collector.x, collector.y, currentRadius * 1.5, 0, Math.PI * 2);
+                    this.ctx.fill();
+                    
+                    // Main collector
+                    this.ctx.globalAlpha = 0.6;
+                    this.ctx.fillStyle = collector.color;
+                    this.ctx.beginPath();
+                    this.ctx.arc(collector.x, collector.y, currentRadius, 0, Math.PI * 2);
+                    this.ctx.fill();
+                    
+                    // Inner core
+                    this.ctx.globalAlpha = 0.9;
+                    this.ctx.fillStyle = 'white';
+                    this.ctx.beginPath();
+                    this.ctx.arc(collector.x, collector.y, currentRadius * 0.3, 0, Math.PI * 2);
+                    this.ctx.fill();
+                    
+                    this.ctx.globalAlpha = 1;
+                });
+            }
+
+            updateHUD() {
+                document.getElementById('particleCount').textContent = this.particles.length;
+                document.getElementById('zenScore').textContent = this.zenScore;
+            }
+
+            gameLoop() {
+                // Clear canvas with subtle fade effect
+                this.ctx.globalAlpha = 0.1;
+                this.ctx.fillStyle = 'rgba(0,0,0,0.1)';
+                this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+                this.ctx.globalAlpha = 1;
+                
+                this.updateParticles();
+                this.drawCollectors();
+                this.drawParticles();
+                
+                requestAnimationFrame(() => this.gameLoop());
+            }
+        }
+
+        // Start the game when page loads
+        window.addEventListener('load', () => {
+            new ZenFlowGame();
+        });
+
+        // Prevent scrolling on mobile
+        document.addEventListener('touchmove', (e) => {
+            e.preventDefault();
+        }, { passive: false });
+    </script>
+</body>
+</html>
