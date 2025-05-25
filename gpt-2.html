@@ -3,13 +3,13 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Gyro Game</title>
+  <title>Gyro Avoidance Game</title>
   <style>
     html, body {
       margin: 0;
       padding: 0;
-      overflow: hidden;
       background: black;
+      overflow: hidden;
     }
     canvas {
       display: block;
@@ -18,14 +18,11 @@
       position: absolute;
       top: 10px;
       right: 10px;
-      background: rgba(255, 255, 255, 0.2);
-      border: none;
+      background: rgba(255,255,255,0.2);
       color: white;
+      border: none;
       padding: 6px 10px;
       border-radius: 6px;
-      font-size: 16px;
-      font-family: sans-serif;
-      cursor: pointer;
       z-index: 10;
     }
   </style>
@@ -37,44 +34,38 @@
   <script>
     const canvas = document.getElementById("canvas");
     const ctx = canvas.getContext("2d");
+
     let width = canvas.width = window.innerWidth;
     let height = canvas.height = window.innerHeight;
 
     let player = { x: width/2, y: height/2, r: 15 };
-    let tiltX = 0, tiltY = 0;
     let baseGamma = 0, baseBeta = 0;
     let hasBaseline = false;
-    let startTime = Date.now();
-    let collisions = 0;
+    let tiltX = 0, tiltY = 0;
 
-    let obstacles = Array.from({ length: 15 }, () => ({
+    let collisions = 0;
+    let startTime = Date.now();
+
+    let obstacles = Array.from({ length: 10 }, () => ({
       x: Math.random() * width,
       y: Math.random() * height,
-      dx: (Math.random() - 0.5) * 2,
-      dy: (Math.random() - 0.5) * 2,
+      dx: (Math.random() - 0.5) * 1.5,
+      dy: (Math.random() - 0.5) * 1.5,
       r: 10 + Math.random() * 10
     }));
 
-    function handleTilt(e) {
-      if (!hasBaseline) {
-        baseGamma = e.gamma || 0;
-        baseBeta = e.beta || 0;
-        hasBaseline = true;
-      }
-      tiltX = (e.gamma - baseGamma) || 0;
-      tiltY = (e.beta - baseBeta) || 0;
-    }
-
     function update() {
-      player.x += tiltX * 0.5;
-      player.y += tiltY * 0.5;
+      player.x += tiltX;
+      player.y += tiltY;
 
+      // Stay in bounds
       player.x = Math.max(player.r, Math.min(width - player.r, player.x));
       player.y = Math.max(player.r, Math.min(height - player.r, player.y));
 
       for (let o of obstacles) {
         o.x += o.dx;
         o.y += o.dy;
+
         if (o.x < 0 || o.x > width) o.dx *= -1;
         if (o.y < 0 || o.y > height) o.dy *= -1;
 
@@ -82,18 +73,4 @@
         let dy = o.y - player.y;
         let dist = Math.sqrt(dx*dx + dy*dy);
         if (dist < player.r + o.r) {
-          // Push obstacle away
-          let angle = Math.atan2(dy, dx);
-          o.dx = Math.cos(angle) * 2;
-          o.dy = Math.sin(angle) * 2;
-          collisions++;
-        }
-      }
-    }
-
-    function draw() {
-      ctx.clearRect(0, 0, width, height);
-
-      // Draw player
-      ctx.beginPath();
-      ctx.arc(player.x, player.y, player.r, 0, Math.PI *
+          o.dx = dx / dist * 2;
