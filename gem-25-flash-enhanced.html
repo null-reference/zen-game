@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Gyro Dodge</title>
+  <title>Gyro Dodge Endless</title>
   <style>
     html, body {
       margin: 0;
@@ -16,7 +16,7 @@
       display: block;
       filter: drop-shadow(0 0 8px rgba(255, 255, 255, 0.5)); /* Subtle glow for canvas */
     }
-    #permission, #gameOver, #gameStats {
+    #permission, #controls {
       position: absolute;
       top: 50%;
       left: 50%;
@@ -30,7 +30,7 @@
       border: 2px solid cyan;
       font-size: 1.2em;
     }
-    #permission button, #gameOver button {
+    #permission button, #controls button {
       background: #00bcd4; /* Cyan button */
       color: white;
       border: none;
@@ -41,14 +41,14 @@
       margin-top: 20px;
       transition: background 0.3s ease, transform 0.2s ease;
     }
-    #permission button:hover, #gameOver button:hover {
+    #permission button:hover, #controls button:hover {
       background: #0097a7;
       transform: scale(1.05);
     }
     #gameStats {
+      position: absolute;
       top: 20px;
       left: 20px;
-      transform: none;
       background: none;
       box-shadow: none;
       border: none;
@@ -67,15 +67,11 @@
 <canvas id="canvas"></canvas>
 <div id="permission">
   <h2>Gyro Dodge</h2>
-  <p>Tap to enable motion sensors and start the game!</p>
+  <p>Tap to enable motion sensors and start dodging!</p>
   <button id="startButton">Start Game</button>
 </div>
-<div id="gameOver" style="display: none;">
-  <h2>Game Over!</h2>
-  <p>You crashed!</p>
-  <p id="finalScore"></p>
-  <p id="finalTime"></p>
-  <button id="restartButton">Play Again</button>
+<div id="controls" style="display: none;">
+  <button id="resetButton">Reset Game</button>
 </div>
 <div id="gameStats">
   <span id="timeDisplay">Time: 0s</span>
@@ -117,11 +113,9 @@ let obstacles = [];
 const timeDisplay = document.getElementById("timeDisplay");
 const collisionDisplay = document.getElementById("collisionDisplay");
 const permissionScreen = document.getElementById("permission");
-const gameOverScreen = document.getElementById("gameOver");
-const finalScoreDisplay = document.getElementById("finalScore");
-const finalTimeDisplay = document.getElementById("finalTime");
+const controlsDiv = document.getElementById("controls");
 const startButton = document.getElementById("startButton");
-const restartButton = document.getElementById("restartButton");
+const resetButton = document.getElementById("resetButton");
 
 // --- Game Initialization and Reset ---
 function initializeGame() {
@@ -142,10 +136,15 @@ function initializeGame() {
     collisionEffect: false, // For visual feedback
     effectTimer: 0
   }));
-  gameOverScreen.style.display = "none";
   permissionScreen.style.display = "none";
+  controlsDiv.style.display = "block"; // Show reset button
   timeDisplay.textContent = `Time: 0s`;
   collisionDisplay.textContent = `Collisions: 0`;
+
+  // Stop any previous animation frame before starting a new one
+  if (animationFrameId) {
+    cancelAnimationFrame(animationFrameId);
+  }
   loop(); // Start the game loop
 }
 
@@ -170,7 +169,7 @@ function enableMotion() {
 }
 
 startButton.addEventListener("click", enableMotion);
-restartButton.addEventListener("click", initializeGame);
+resetButton.addEventListener("click", initializeGame); // Reset button calls initializeGame
 
 // --- Tilt Handling ---
 function handleTilt(e) {
@@ -244,13 +243,6 @@ function update() {
         // Player collision feedback
         player.color = "#ff4444"; // Red on hit
         setTimeout(() => player.color = "#00e676", 100); // Back to green quickly
-
-        // Game Over condition
-        cancelAnimationFrame(animationFrameId); // Stop the game loop
-        gameRunning = false;
-        gameOverScreen.style.display = "block";
-        finalScoreDisplay.textContent = `Collisions: ${collisionCount}`;
-        finalTimeDisplay.textContent = `Time Survived: ${Math.floor((Date.now() - startTime) / 1000)}s`;
       }
       // Nudge player away from obstacle on sustained collision
       const angle = Math.atan2(player.y - o.y, player.x - o.x);
