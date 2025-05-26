@@ -60,6 +60,19 @@
             font-size: 14px;
             opacity: 0.8;
         }
+
+        .mobile-instructions {
+            display: none;
+        }
+
+        @media (max-width: 768px) {
+            .instructions .desktop-only {
+                display: none;
+            }
+            .mobile-instructions {
+                display: inline;
+            }
+        }
     </style>
 </head>
 <body>
@@ -72,7 +85,9 @@
     </div>
     
     <div class="instructions">
-        Move: WASD or Arrow Keys | Shoot: Spacebar or Click | Relax and enjoy the zen
+        <span class="desktop-only">Move: WASD or Arrow Keys | Shoot: Spacebar or Click</span>
+        <span class="mobile-instructions">Tilt device or drag to move | Tap to shoot</span>
+        <br>Relax and enjoy the zen
     </div>
 
     <script>
@@ -137,50 +152,111 @@
         // Touch controls for mobile
         document.addEventListener('touchstart', (e) => {
             e.preventDefault();
-            shootBullet();
+            if (!touchDragging) {
+                shootBullet();
+            }
         });
         
-        // Request device orientation permission for iOS
+        // Request device orientation permission and enable controls
         function requestGyroPermission() {
-            if (typeof DeviceOrientationEvent.requestPermission === 'function') {
+            if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+                // iOS 13+ requires permission
                 DeviceOrientationEvent.requestPermission()
                     .then(response => {
-                        if (response == 'granted') {
+                        if (response === 'granted') {
                             enableGyroControls();
+                        } else {
+                            console.log('Device orientation permission denied');
+                            enableTouchControls();
                         }
                     })
-                    .catch(console.error);
+                    .catch(error => {
+                        console.error('Error requesting device orientation permission:', error);
+                        enableTouchControls();
+                    });
             } else {
+                // Android and older iOS
                 enableGyroControls();
             }
         }
         
         // Enable gyroscope controls
         function enableGyroControls() {
+            console.log('Enabling gyro controls');
             gyroSupported = true;
-            window.addEventListener('deviceorientation', (e) => {
-                // Convert device orientation to movement
-                // beta: front-to-back tilt (-180 to 180)
-                // gamma: left-to-right tilt (-90 to 90)
-                
-                if (e.gamma !== null && e.beta !== null) {
-                    // Normalize gamma (-90 to 90) to movement range
-                    gyroX = Math.max(-1, Math.min(1, e.gamma / 45)); // Divide by 45 for sensitivity
-                    
-                    // Normalize beta for forward/backward movement
-                    // Adjust for typical holding angle (around 45-60 degrees)
-                    let adjustedBeta = e.beta - 60; // Assume neutral position at 60 degrees
-                    gyroY = Math.max(-1, Math.min(1, adjustedBeta / 30)); // Divide by 30 for sensitivity
+            
+            window.addEventListener('deviceorientation', handleOrientation, true);
+            
+            // Fallback to touch if no orientation data after 3 seconds
+            setTimeout(() => {
+                if (gyroX === 0 && gyroY === 0) {
+                    console.log('No gyro data received, falling back to touch');
+                    enableTouchControls();
                 }
+            }, 3000);
+        }
+        
+        function handleOrientation(e) {
+            if (e.gamma !== null && e.beta !== null) {
+                // Left-right tilt (gamma: -90 to 90)
+                gyroX = Math.max(-1, Math.min(1, e.gamma / 30));
+                
+                // Forward-backward tilt (beta: -180 to 180)
+                // Adjust for natural holding position
+                let adjustedBeta = e.beta;
+                if (adjustedBeta > 90) adjustedBeta = adjustedBeta - 180;
+                gyroY = Math.max(-1, Math.min(1, adjustedBeta / 30));
+            }
+        }
+        
+        // Touch drag controls as fallback
+        let touchStartX = 0;
+        let touchStartY = 0;
+        let touchDragging = false;
+        
+        function enableTouchControls() {
+            console.log('Enabling touch drag controls');
+            
+            document.addEventListener('touchstart', (e) => {
+                if (e.touches.length === 1) {
+                    touchStartX = e.touches[0].clientX;
+                    touchStartY = e.touches[0].clientY;
+                    touchDragging = true;
+                }
+                shootBullet(); // Still shoot on touch
+            });
+            
+            document.addEventListener('touchmove', (e) => {
+                e.preventDefault();
+                if (touchDragging && e.touches.length === 1) {
+                    const deltaX = e.touches[0].clientX - touchStartX;
+                    const deltaY = e.touches[0].clientY - touchStartY;
+                    
+                    // Convert to normalized movement
+                    gyroX = Math.max(-1, Math.min(1, deltaX / 100));
+                    gyroY = Math.max(-1, Math.min(1, deltaY / 100));
+                }
+            });
+            
+            document.addEventListener('touchend', () => {
+                touchDragging = false;
+                gyroX = 0;
+                gyroY = 0;
             });
         }
         
-        // Initialize gyro on mobile
+        // Initialize mobile controls
         if (isMobile) {
-            // Auto-enable for Android, request permission for iOS
-            setTimeout(() => {
+            // For iOS, we need user interaction to request permission
+            document.addEventListener('touchstart', function initMobile() {
+                document.removeEventListener('touchstart', initMobile);
                 requestGyroPermission();
-            }, 1000);
+            }, { once: true });
+            
+            // For Android, try immediately
+            if (!navigator.userAgent.includes('iPhone') && !navigator.userAgent.includes('iPad')) {
+                setTimeout(requestGyroPermission, 500);
+            }
         }
         
         // Create starfield
@@ -256,6 +332,16 @@
             }
             if (keys['s'] || keys['arrowdown']) {
                 player.y = Math.min(canvas.height - player.height, player.y + player.speed);
+            }
+            
+            // Gyroscope or touch controls for mobile
+            if (isMobile) {
+                player.x += gyroX * player.speed * 1.5;
+                player.y += gyroY * player.speed * 1.2;
+                
+                // Keep player within bounds
+                player.x = Math.max(0, Math.min(canvas.width - player.width, player.x));
+                player.y = Math.max(0, Math.min(canvas.height - player.height, player.y));
             }
             
             // Update bullets
