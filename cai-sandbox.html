@@ -3,530 +3,437 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Spaceship Dodge Game</title>
+    <title>Zen Spaceflight - Bubble Burst</title>
     <style>
-        * {
+        body {
             margin: 0;
             padding: 0;
-            box-sizing: border-box;
-        }
-
-        body {
-            background: linear-gradient(to bottom, #0a0a2e, #16213e, #1a1a2e);
-            font-family: 'Courier New', monospace;
+            background: radial-gradient(ellipse at center, #1a1a2e 0%, #16213e 50%, #0f0f23 100%);
             overflow: hidden;
-            height: 100vh;
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
-            color: white;
-        }
-
-        #gameContainer {
-            position: relative;
-            width: 100vw;
-            height: 100vh;
-            background: 
-                radial-gradient(circle at 20% 80%, rgba(120, 80, 255, 0.1) 0%, transparent 50%),
-                radial-gradient(circle at 80% 20%, rgba(255, 120, 120, 0.1) 0%, transparent 50%),
-                radial-gradient(circle at 40% 40%, rgba(120, 255, 120, 0.05) 0%, transparent 50%);
-            overflow: hidden;
+            font-family: 'Arial', sans-serif;
+            cursor: none;
         }
 
         #gameCanvas {
-            position: absolute;
-            top: 0;
-            left: 0;
+            display: block;
             background: transparent;
         }
 
-        #spaceship {
-            position: fixed;
-            bottom: 20px;
-            left: 50%;
-            width: 40px;
-            height: 40px;
-            background: linear-gradient(45deg, #00ffff, #0080ff);
-            clip-path: polygon(50% 0%, 0% 100%, 100% 100%);
-            box-shadow: 0 0 20px rgba(0, 255, 255, 0.6);
-            transition: filter 0.3s ease, transform 0.3s ease;
-            z-index: 10;
-            margin-left: -20px;
-        }
-
-        .projectile {
-            position: absolute;
-            width: 20px;
-            height: 20px;
-            background: linear-gradient(45deg, #ff4444, #ff8888);
-            border-radius: 50%;
-            box-shadow: 0 0 15px rgba(255, 68, 68, 0.8);
-            animation: glow 1s ease-in-out infinite alternate;
-        }
-
-        @keyframes glow {
-            from { box-shadow: 0 0 15px rgba(255, 68, 68, 0.8); }
-            to { box-shadow: 0 0 25px rgba(255, 68, 68, 1); }
-        }
-
-        #gameUI {
-            position: absolute;
-            top: 20px;
-            left: 20px;
-            z-index: 100;
-            color: white;
-            font-size: 18px;
-            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
-        }
-
-        #startScreen, #gameOverScreen {
+        .stars {
             position: absolute;
             top: 0;
             left: 0;
             width: 100%;
             height: 100%;
-            background: rgba(0, 0, 0, 0.8);
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
-            z-index: 1000;
-            text-align: center;
-            padding: 20px;
-        }
-
-        #startScreen h1, #gameOverScreen h1 {
-            font-size: 2.5rem;
-            margin-bottom: 20px;
-            color: #00ffff;
-            text-shadow: 0 0 20px rgba(0, 255, 255, 0.8);
-        }
-
-        #startScreen p, #gameOverScreen p {
-            font-size: 1.2rem;
-            margin-bottom: 30px;
-            line-height: 1.6;
-        }
-
-        .btn {
-            background: linear-gradient(45deg, #00ffff, #0080ff);
-            border: none;
-            color: white;
-            padding: 15px 30px;
-            font-size: 1.2rem;
-            border-radius: 25px;
-            cursor: pointer;
-            box-shadow: 0 0 20px rgba(0, 255, 255, 0.4);
-            transition: all 0.3s ease;
-            font-family: 'Courier New', monospace;
-        }
-
-        .btn:hover {
-            box-shadow: 0 0 30px rgba(0, 255, 255, 0.8);
-            transform: scale(1.05);
-        }
-
-        #rail {
-            position: absolute;
-            bottom: 10px;
-            left: 0;
-            right: 0;
-            height: 4px;
-            background: linear-gradient(90deg, #333, #666, #333);
-            box-shadow: 0 0 10px rgba(255, 255, 255, 0.3);
+            pointer-events: none;
         }
 
         .star {
             position: absolute;
             background: white;
             border-radius: 50%;
-            animation: twinkle 2s ease-in-out infinite alternate;
+            animation: twinkle 3s ease-in-out infinite alternate;
         }
 
         @keyframes twinkle {
-            from { opacity: 0.3; }
-            to { opacity: 1; }
+            0% { opacity: 0.3; transform: scale(1); }
+            100% { opacity: 1; transform: scale(1.2); }
+        }
+
+        .ui {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            color: #87ceeb;
+            font-size: 18px;
+            text-shadow: 0 0 10px rgba(135, 206, 235, 0.5);
+            z-index: 100;
+        }
+
+        .instructions {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: #87ceeb;
+            text-align: center;
+            font-size: 14px;
+            opacity: 0.8;
         }
     </style>
 </head>
 <body>
-    <div id="gameContainer">
-        <canvas id="gameCanvas"></canvas>
-        <div id="rail"></div>
-        <div id="spaceship"></div>
-        
-        <div id="gameUI">
-            <div>Score: <span id="score">0</span></div>
-            <div>Lives: <span id="lives">3</span></div>
-            <div id="orientationStatus">Tilt to move!</div>
-        </div>
-
-        <div id="startScreen">
-            <h1>🚀 SPACESHIP DODGE</h1>
-            <p>Tilt your device left and right to move your spaceship!<br>
-            Avoid the falling projectiles to survive.<br><br>
-            <small>📱 Mobile: Grant motion permission when prompted<br>
-            💻 Desktop: Use arrow keys or A/D keys</small></p>
-            <button class="btn" onclick="requestPermissionsAndStart()">START GAME</button>
-        </div>
-
-        <div id="gameOverScreen" style="display: none;">
-            <h1>GAME OVER</h1>
-            <p>Your Score: <span id="finalScore">0</span></p>
-            <button class="btn" onclick="restartGame()">PLAY AGAIN</button>
-        </div>
+    <div class="stars" id="starField"></div>
+    <canvas id="gameCanvas"></canvas>
+    
+    <div class="ui">
+        <div>Score: <span id="score">0</span></div>
+        <div>Bubbles Burst: <span id="bubblesBurst">0</span></div>
+    </div>
+    
+    <div class="instructions">
+        Move: WASD or Arrow Keys | Shoot: Spacebar or Click | Relax and enjoy the zen
     </div>
 
     <script>
-        // Game configuration - easily adjustable
-        const gameConfig = {
-            initialSpawnRate: 0.005,      // Starting spawn rate (lower = fewer projectiles)
-            spawnRateIncrease: 0.0001,    // How much spawn rate increases per frame
-            maxSpawnRate: 0.03,           // Maximum spawn rate cap
-            difficultyIncreaseRate: 0.0005 // How fast the game gets harder
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        // Set canvas size
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+        
+        // Game state
+        let score = 0;
+        let bubblesBurst = 0;
+        let gameRunning = true;
+        
+        // Player spaceship
+        const player = {
+            x: canvas.width / 2,
+            y: canvas.height - 100,
+            width: 40,
+            height: 60,
+            speed: 5,
+            color: '#87ceeb'
         };
-
-        let gameState = {
-            isPlaying: false,
-            score: 0,
-            lives: 3,
-            spaceshipX: 0,
-            projectiles: [],
-            gameSpeed: 2,
-            spawnRate: gameConfig.initialSpawnRate,
-            orientationSupported: false
-        };
-
-        const spaceship = document.getElementById('spaceship');
-        const gameContainer = document.getElementById('gameContainer');
-        const scoreElement = document.getElementById('score');
-        const livesElement = document.getElementById('lives');
-        const startScreen = document.getElementById('startScreen');
-        const gameOverScreen = document.getElementById('gameOverScreen');
-        const finalScoreElement = document.getElementById('finalScore');
-        const orientationStatus = document.getElementById('orientationStatus');
-
-        let containerWidth = window.innerWidth;
-        let containerHeight = window.innerHeight;
-
-        // Create starfield background
+        
+        // Arrays for game objects
+        const bullets = [];
+        const bubbles = [];
+        const particles = [];
+        
+        // Input handling
+        const keys = {};
+        let mouseX = 0;
+        let mouseY = 0;
+        let gyroX = 0;
+        let gyroY = 0;
+        let isMobile = /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+        let gyroSupported = false;
+        
+        // Event listeners
+        document.addEventListener('keydown', (e) => {
+            keys[e.key.toLowerCase()] = true;
+            if (e.code === 'Space') {
+                e.preventDefault();
+                shootBullet();
+            }
+        });
+        
+        document.addEventListener('keyup', (e) => {
+            keys[e.key.toLowerCase()] = false;
+        });
+        
+        document.addEventListener('mousemove', (e) => {
+            mouseX = e.clientX;
+            mouseY = e.clientY;
+        });
+        
+        document.addEventListener('click', () => {
+            shootBullet();
+        });
+        
+        // Touch controls for mobile
+        document.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            shootBullet();
+        });
+        
+        // Request device orientation permission for iOS
+        function requestGyroPermission() {
+            if (typeof DeviceOrientationEvent.requestPermission === 'function') {
+                DeviceOrientationEvent.requestPermission()
+                    .then(response => {
+                        if (response == 'granted') {
+                            enableGyroControls();
+                        }
+                    })
+                    .catch(console.error);
+            } else {
+                enableGyroControls();
+            }
+        }
+        
+        // Enable gyroscope controls
+        function enableGyroControls() {
+            gyroSupported = true;
+            window.addEventListener('deviceorientation', (e) => {
+                // Convert device orientation to movement
+                // beta: front-to-back tilt (-180 to 180)
+                // gamma: left-to-right tilt (-90 to 90)
+                
+                if (e.gamma !== null && e.beta !== null) {
+                    // Normalize gamma (-90 to 90) to movement range
+                    gyroX = Math.max(-1, Math.min(1, e.gamma / 45)); // Divide by 45 for sensitivity
+                    
+                    // Normalize beta for forward/backward movement
+                    // Adjust for typical holding angle (around 45-60 degrees)
+                    let adjustedBeta = e.beta - 60; // Assume neutral position at 60 degrees
+                    gyroY = Math.max(-1, Math.min(1, adjustedBeta / 30)); // Divide by 30 for sensitivity
+                }
+            });
+        }
+        
+        // Initialize gyro on mobile
+        if (isMobile) {
+            // Auto-enable for Android, request permission for iOS
+            setTimeout(() => {
+                requestGyroPermission();
+            }, 1000);
+        }
+        
+        // Create starfield
         function createStars() {
-            for (let i = 0; i < 50; i++) {
+            const starField = document.getElementById('starField');
+            for (let i = 0; i < 100; i++) {
                 const star = document.createElement('div');
                 star.className = 'star';
                 star.style.left = Math.random() * 100 + '%';
                 star.style.top = Math.random() * 100 + '%';
                 star.style.width = Math.random() * 3 + 1 + 'px';
                 star.style.height = star.style.width;
-                star.style.animationDelay = Math.random() * 2 + 's';
-                gameContainer.appendChild(star);
+                star.style.animationDelay = Math.random() * 3 + 's';
+                starField.appendChild(star);
             }
         }
-
-        // Initialize spaceship position
-        function initializeSpaceship() {
-            containerWidth = window.innerWidth;
-            containerHeight = window.innerHeight;
-            gameState.spaceshipX = containerWidth / 2; // Center position
-            updateSpaceshipPosition();
-            
-            // Force visibility
-            spaceship.style.display = 'block';
-            spaceship.style.visibility = 'visible';
-        }
-
-        // Update spaceship position
-        function updateSpaceshipPosition() {
-            const minX = 20; // Half spaceship width
-            const maxX = containerWidth - 20; // Half spaceship width  
-            gameState.spaceshipX = Math.max(minX, Math.min(maxX, gameState.spaceshipX));
-            
-            // Update position from center
-            spaceship.style.left = gameState.spaceshipX + 'px';
-            spaceship.style.marginLeft = '-20px'; // Center the ship
-        }
-
-        // Permission request function
-        async function requestPermissionsAndStart() {
-            orientationStatus.textContent = 'Requesting permissions...';
-            
-            try {
-                // Check if we're on iOS and need to request permission
-                if (typeof DeviceOrientationEvent !== 'undefined' && 
-                    typeof DeviceOrientationEvent.requestPermission === 'function') {
-                    
-                    const permission = await DeviceOrientationEvent.requestPermission();
-                    if (permission === 'granted') {
-                        orientationStatus.textContent = 'Motion permission granted!';
-                        gameState.orientationSupported = true;
-                    } else {
-                        orientationStatus.textContent = 'Motion permission denied - using keyboard';
-                        gameState.orientationSupported = false;
-                    }
-                } else {
-                    // For Android and other devices
-                    orientationStatus.textContent = 'Setting up motion controls...';
-                    gameState.orientationSupported = true;
-                }
-                
-                // Small delay to show the status message
-                setTimeout(() => {
-                    startGame();
-                }, 500);
-                
-            } catch (error) {
-                console.log('Permission request failed:', error);
-                orientationStatus.textContent = 'Using keyboard controls';
-                gameState.orientationSupported = false;
-                startGame();
-            }
-        }
-
-        // Device orientation controls
-        function handleOrientation(event) {
-            if (!gameState.isPlaying || !gameState.orientationSupported) return;
-            
-            // Get gamma (left-right tilt)
-            const gamma = event.gamma; // -90 to 90 degrees
-            
-            if (gamma === null || gamma === undefined) return;
-            
-            // Apply movement based on tilt
-            const sensitivity = 5;
-            const movement = gamma * sensitivity;
-            
-            gameState.spaceshipX += movement;
-            updateSpaceshipPosition();
-            
-            // Show debug info
-            orientationStatus.textContent = `Tilt: ${Math.round(gamma)}° | Score: ${gameState.score}`;
-        }
-
-        // Keyboard controls for desktop
-        const keys = {};
         
-        document.addEventListener('keydown', (e) => {
-            keys[e.key.toLowerCase()] = true;
-        });
-
-        document.addEventListener('keyup', (e) => {
-            keys[e.key.toLowerCase()] = false;
-        });
-
-        function handleKeyboardControls() {
-            if (!gameState.isPlaying) return;
-            
-            const speed = 8;
-            
-            if (keys['arrowleft'] || keys['a']) {
-                gameState.spaceshipX -= speed;
-            }
-            if (keys['arrowright'] || keys['d']) {
-                gameState.spaceshipX += speed;
-            }
-            
-            updateSpaceshipPosition();
-        }
-
-        // Projectile management
-        function createProjectile() {
-            const projectile = document.createElement('div');
-            projectile.className = 'projectile';
-            projectile.style.left = Math.random() * (containerWidth - 20) + 'px';
-            projectile.style.top = '-20px';
-            gameContainer.appendChild(projectile);
-            
-            gameState.projectiles.push({
-                element: projectile,
-                x: parseFloat(projectile.style.left),
-                y: -20,
-                speed: gameState.gameSpeed + Math.random() * 2
+        // Bullet class
+        function shootBullet() {
+            bullets.push({
+                x: player.x + player.width / 2,
+                y: player.y,
+                width: 4,
+                height: 12,
+                speed: 8,
+                color: '#00ff88'
             });
         }
-
-        function updateProjectiles() {
-            for (let i = gameState.projectiles.length - 1; i >= 0; i--) {
-                const projectile = gameState.projectiles[i];
-                projectile.y += projectile.speed;
-                projectile.element.style.top = projectile.y + 'px';
-
-                // Remove projectiles that are off screen
-                if (projectile.y > containerHeight) {
-                    projectile.element.remove();
-                    gameState.projectiles.splice(i, 1);
-                    gameState.score += 10;
-                    continue;
+        
+        // Bubble class
+        function createBubble() {
+            const size = Math.random() * 40 + 20;
+            bubbles.push({
+                x: Math.random() * (canvas.width - size),
+                y: -size,
+                size: size,
+                speed: Math.random() * 2 + 1,
+                color: `hsl(${Math.random() * 360}, 70%, 60%)`,
+                shimmer: 0,
+                alpha: 0.8
+            });
+        }
+        
+        // Particle effect for bubble burst
+        function createParticles(x, y, color) {
+            for (let i = 0; i < 15; i++) {
+                particles.push({
+                    x: x,
+                    y: y,
+                    vx: (Math.random() - 0.5) * 8,
+                    vy: (Math.random() - 0.5) * 8,
+                    size: Math.random() * 4 + 2,
+                    color: color,
+                    life: 1,
+                    decay: Math.random() * 0.02 + 0.01
+                });
+            }
+        }
+        
+        // Update game state
+        function update() {
+            if (!gameRunning) return;
+            
+            // Update player position
+            if (keys['a'] || keys['arrowleft']) {
+                player.x = Math.max(0, player.x - player.speed);
+            }
+            if (keys['d'] || keys['arrowright']) {
+                player.x = Math.min(canvas.width - player.width, player.x + player.speed);
+            }
+            if (keys['w'] || keys['arrowup']) {
+                player.y = Math.max(0, player.y - player.speed);
+            }
+            if (keys['s'] || keys['arrowdown']) {
+                player.y = Math.min(canvas.height - player.height, player.y + player.speed);
+            }
+            
+            // Update bullets
+            for (let i = bullets.length - 1; i >= 0; i--) {
+                const bullet = bullets[i];
+                bullet.y -= bullet.speed;
+                
+                if (bullet.y < 0) {
+                    bullets.splice(i, 1);
                 }
-
-                // Collision detection with visual feedback
-                if (checkCollision(projectile)) {
-                    projectile.element.remove();
-                    gameState.projectiles.splice(i, 1);
-                    gameState.lives--;
+            }
+            
+            // Update bubbles
+            for (let i = bubbles.length - 1; i >= 0; i--) {
+                const bubble = bubbles[i];
+                bubble.y += bubble.speed;
+                bubble.shimmer += 0.1;
+                
+                if (bubble.y > canvas.height) {
+                    bubbles.splice(i, 1);
+                }
+            }
+            
+            // Update particles
+            for (let i = particles.length - 1; i >= 0; i--) {
+                const particle = particles[i];
+                particle.x += particle.vx;
+                particle.y += particle.vy;
+                particle.vx *= 0.98;
+                particle.vy *= 0.98;
+                particle.life -= particle.decay;
+                
+                if (particle.life <= 0) {
+                    particles.splice(i, 1);
+                }
+            }
+            
+            // Check bullet-bubble collisions
+            for (let i = bullets.length - 1; i >= 0; i--) {
+                const bullet = bullets[i];
+                for (let j = bubbles.length - 1; j >= 0; j--) {
+                    const bubble = bubbles[j];
+                    const dx = bullet.x - (bubble.x + bubble.size / 2);
+                    const dy = bullet.y - (bubble.y + bubble.size / 2);
+                    const distance = Math.sqrt(dx * dx + dy * dy);
                     
-                    // Enhanced flash effect with red tint
-                    spaceship.style.filter = 'brightness(0.3) sepia(1) hue-rotate(-50deg) saturate(3)';
-                    spaceship.style.transform = 'scale(1.2)';
-                    setTimeout(() => {
-                        spaceship.style.filter = 'brightness(1)';
-                        spaceship.style.transform = 'scale(1)';
-                    }, 300);
-                    
-                    // Add screen shake effect
-                    gameContainer.style.transform = 'translate(' + (Math.random() * 4 - 2) + 'px, ' + (Math.random() * 4 - 2) + 'px)';
-                    setTimeout(() => {
-                        gameContainer.style.transform = 'translate(0, 0)';
-                    }, 100);
-                    
-                    if (gameState.lives <= 0) {
-                        endGame();
+                    if (distance < bubble.size / 2) {
+                        // Create particle effect
+                        createParticles(bubble.x + bubble.size / 2, bubble.y + bubble.size / 2, bubble.color);
+                        
+                        // Remove bullet and bubble
+                        bullets.splice(i, 1);
+                        bubbles.splice(j, 1);
+                        
+                        // Update score
+                        score += Math.floor(bubble.size);
+                        bubblesBurst++;
+                        document.getElementById('score').textContent = score;
+                        document.getElementById('bubblesBurst').textContent = bubblesBurst;
+                        break;
                     }
                 }
             }
-        }
-
-        function checkCollision(projectile) {
-            // Get actual spaceship bounds (triangle shape considerations)
-            const spaceshipRect = {
-                x: gameState.spaceshipX - 15, // Slightly smaller hit area for fairness
-                y: containerHeight - 55,      // Adjust for spaceship height
-                width: 30,                    // Smaller than visual width (40px)
-                height: 30                    // Smaller than visual height (40px)
-            };
-
-            // Projectile bounds (also slightly smaller)
-            const projectileRect = {
-                x: projectile.x + 2,          // Add small margin
-                y: projectile.y + 2,          // Add small margin  
-                width: 16,                    // Smaller than visual (20px)
-                height: 16                    // Smaller than visual (20px)
-            };
-
-            // More precise collision detection with overlap threshold
-            const overlapX = Math.max(0, Math.min(spaceshipRect.x + spaceshipRect.width, projectileRect.x + projectileRect.width) - Math.max(spaceshipRect.x, projectileRect.x));
-            const overlapY = Math.max(0, Math.min(spaceshipRect.y + spaceshipRect.height, projectileRect.y + projectileRect.height) - Math.max(spaceshipRect.y, projectileRect.y));
             
-            // Require significant overlap for collision (not just touching edges)
-            const minOverlap = 8;
-            return overlapX >= minOverlap && overlapY >= minOverlap;
+            // Spawn new bubbles
+            if (Math.random() < 0.02) {
+                createBubble();
+            }
         }
-
+        
+        // Render game
+        function render() {
+            // Clear canvas
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // Draw spaceship
+            ctx.save();
+            ctx.translate(player.x + player.width / 2, player.y + player.height / 2);
+            
+            // Ship body
+            ctx.fillStyle = player.color;
+            ctx.beginPath();
+            ctx.moveTo(0, -player.height / 2);
+            ctx.lineTo(-player.width / 3, player.height / 2);
+            ctx.lineTo(0, player.height / 3);
+            ctx.lineTo(player.width / 3, player.height / 2);
+            ctx.closePath();
+            ctx.fill();
+            
+            // Ship glow
+            ctx.shadowColor = player.color;
+            ctx.shadowBlur = 15;
+            ctx.fill();
+            
+            ctx.restore();
+            
+            // Draw bullets
+            bullets.forEach(bullet => {
+                ctx.fillStyle = bullet.color;
+                ctx.shadowColor = bullet.color;
+                ctx.shadowBlur = 10;
+                ctx.fillRect(bullet.x, bullet.y, bullet.width, bullet.height);
+            });
+            
+            // Draw bubbles
+            bubbles.forEach(bubble => {
+                ctx.save();
+                ctx.globalAlpha = bubble.alpha;
+                
+                // Bubble main body
+                const gradient = ctx.createRadialGradient(
+                    bubble.x + bubble.size * 0.3, bubble.y + bubble.size * 0.3, 0,
+                    bubble.x + bubble.size / 2, bubble.y + bubble.size / 2, bubble.size / 2
+                );
+                gradient.addColorStop(0, bubble.color);
+                gradient.addColorStop(0.7, bubble.color.replace('60%', '60%, 0.5'));
+                gradient.addColorStop(1, bubble.color.replace('60%', '60%, 0.2'));
+                
+                ctx.fillStyle = gradient;
+                ctx.beginPath();
+                ctx.arc(bubble.x + bubble.size / 2, bubble.y + bubble.size / 2, bubble.size / 2, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // Bubble highlight
+                ctx.fillStyle = 'rgba(255, 255, 255, ' + (0.6 + Math.sin(bubble.shimmer) * 0.2) + ')';
+                ctx.beginPath();
+                ctx.arc(bubble.x + bubble.size * 0.3, bubble.y + bubble.size * 0.3, bubble.size * 0.15, 0, Math.PI * 2);
+                ctx.fill();
+                
+                ctx.restore();
+            });
+            
+            // Draw particles
+            particles.forEach(particle => {
+                ctx.save();
+                ctx.globalAlpha = particle.life;
+                ctx.fillStyle = particle.color;
+                ctx.shadowColor = particle.color;
+                ctx.shadowBlur = 5;
+                ctx.beginPath();
+                ctx.arc(particle.x, particle.y, particle.size, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+            });
+            
+            // Reset shadow
+            ctx.shadowBlur = 0;
+        }
+        
         // Game loop
         function gameLoop() {
-            if (!gameState.isPlaying) return;
-
-            handleKeyboardControls();
-
-            // Spawn projectiles based on current spawn rate
-            if (Math.random() < gameState.spawnRate) {
-                createProjectile();
-            }
-
-            updateProjectiles();
-            updateUI();
-
-            // Gradually increase difficulty
-            gameState.gameSpeed += gameConfig.difficultyIncreaseRate;
-            
-            // Increase spawn rate over time but cap it
-            if (gameState.spawnRate < gameConfig.maxSpawnRate) {
-                gameState.spawnRate += gameConfig.spawnRateIncrease;
-            }
-
+            update();
+            render();
             requestAnimationFrame(gameLoop);
         }
-
-        function updateUI() {
-            scoreElement.textContent = gameState.score;
-            livesElement.textContent = gameState.lives;
+        
+        // Initialize game
+        function init() {
+            createStars();
             
-            // Show current difficulty (optional debug info)
-            // orientationStatus.textContent = `Spawn Rate: ${(gameState.spawnRate * 1000).toFixed(1)}/1000`;
-        }
-
-        // Game state management
-        function startGame() {
-            gameState.isPlaying = true;
-            gameState.score = 0;
-            gameState.lives = 3;
-            gameState.gameSpeed = 2;
-            gameState.spawnRate = 0.02;
-            gameState.projectiles = [];
-
-            // Clear existing projectiles
-            document.querySelectorAll('.projectile').forEach(p => p.remove());
-
-            startScreen.style.display = 'none';
-            gameOverScreen.style.display = 'none';
+            // Create initial bubbles
+            for (let i = 0; i < 5; i++) {
+                setTimeout(() => createBubble(), i * 1000);
+            }
             
-            initializeSpaceship();
-            updateUI();
             gameLoop();
-
-            // Enhanced orientation setup
-            setupOrientation();
         }
-
-        function setupOrientation() {
-            // Remove any existing listeners
-            window.removeEventListener('deviceorientation', handleOrientation);
-            
-            if (gameState.orientationSupported) {
-                // Add the orientation listener
-                window.addEventListener('deviceorientation', handleOrientation, true);
-                orientationStatus.textContent = 'Tilt to move!';
-            } else {
-                orientationStatus.textContent = 'Use arrow keys or A/D';
-            }
-
-            // Add touch support as backup
-            let touchStartX = 0;
-            let isTouching = false;
-
-            gameContainer.addEventListener('touchstart', (e) => {
-                if (!gameState.isPlaying) return;
-                touchStartX = e.touches[0].clientX;
-                isTouching = true;
-            });
-
-            gameContainer.addEventListener('touchmove', (e) => {
-                if (!gameState.isPlaying || !isTouching) return;
-                e.preventDefault();
-                const touchX = e.touches[0].clientX;
-                const deltaX = touchX - touchStartX;
-                gameState.spaceshipX += deltaX * 0.8;
-                updateSpaceshipPosition();
-                touchStartX = touchX;
-            });
-
-            gameContainer.addEventListener('touchend', () => {
-                isTouching = false;
-            });
-        }
-
-        function endGame() {
-            gameState.isPlaying = false;
-            finalScoreElement.textContent = gameState.score;
-            gameOverScreen.style.display = 'flex';
-        }
-
-        function restartGame() {
-            requestPermissionsAndStart();
-        }
-
-        // Initialize
+        
+        // Handle window resize
         window.addEventListener('resize', () => {
-            containerWidth = window.innerWidth;
-            containerHeight = window.innerHeight;
-            if (gameState.isPlaying) {
-                updateSpaceshipPosition();
-            }
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            player.x = Math.min(player.x, canvas.width - player.width);
+            player.y = Math.min(player.y, canvas.height - player.height);
         });
-
-        // Create stars on load
-        createStars();
-        initializeSpaceship();
+        
+        // Start the game
+        init();
     </script>
 </body>
 </html>
