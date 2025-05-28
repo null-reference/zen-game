@@ -115,6 +115,9 @@
             <p>Hold your device comfortably</p>
             <p>This position will be your center</p>
             <button id="startBtn">Begin Meditation</button>
+            <div style="margin-top: 15px; font-size: 12px; opacity: 0.7;">
+                <button id="testGyroBtn" style="background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.3); color: white; padding: 8px 16px; border-radius: 15px; font-size: 12px;">Test Gyroscope Manually</button>
+            </div>
         </div>
 
         <div id="gameOver">
@@ -251,7 +254,14 @@
             setupControls() {
                 // Start button
                 document.getElementById('startBtn').addEventListener('click', () => {
+                    console.log('🎯 Main start button clicked');
                     this.requestMotionAccess();
+                });
+                
+                // Manual gyroscope test button
+                document.getElementById('testGyroBtn').addEventListener('click', () => {
+                    console.log('🧪 Manual gyroscope test button clicked');
+                    this.manualGyroTest();
                 });
                 
                 // Touch controls (fallback)
@@ -279,6 +289,59 @@
                 document.getElementById('restartBtn').addEventListener('click', () => {
                     this.restart();
                 });
+            }
+
+            manualGyroTest() {
+                console.log('🔧 Starting manual gyroscope test...');
+                document.getElementById('gyroState').textContent = 'Manual test - Tilt your device!';
+                
+                let eventCount = 0;
+                const testDuration = 10000; // 10 seconds
+                const startTime = Date.now();
+                
+                const manualTestHandler = (event) => {
+                    eventCount++;
+                    const elapsed = Date.now() - startTime;
+                    
+                    if (eventCount % 10 === 0) { // Log every 10th event
+                        console.log(`🧪 Manual test #${eventCount} (${elapsed}ms):`, {
+                            gamma: event.gamma,
+                            beta: event.beta,
+                            alpha: event.alpha,
+                            absolute: event.absolute
+                        });
+                    }
+                    
+                    if (event.gamma !== null && event.beta !== null) {
+                        console.log('✅ SUCCESS! Gyroscope is working!');
+                        document.getElementById('gyroState').textContent = 'Gyroscope working! Try main button again.';
+                        window.removeEventListener('deviceorientation', manualTestHandler);
+                        
+                        // Enable the gyroscope for the game
+                        this.gyroEnabled = true;
+                        this.setupGameGyroscope();
+                        
+                        setTimeout(() => {
+                            this.startGame();
+                        }, 2000);
+                        return;
+                    }
+                    
+                    if (elapsed > testDuration) {
+                        console.log('❌ Manual test completed - no gyroscope detected');
+                        document.getElementById('gyroState').textContent = 'No gyroscope detected';
+                        window.removeEventListener('deviceorientation', manualTestHandler);
+                        
+                        setTimeout(() => {
+                            this.startWithoutGyro();
+                        }, 2000);
+                    }
+                };
+                
+                window.addEventListener('deviceorientation', manualTestHandler);
+                
+                // Show instructions
+                alert('Tilt your device now! The test will run for 10 seconds.');
             }
 
             async requestMotionAccess() {
@@ -373,15 +436,24 @@
                 };
                 window.addEventListener('devicemotion', motionTest);
                 
-                // Timeout after 6 seconds
                 setTimeout(() => {
                     if (!gyroFound) {
                         console.log('⏰ No gyroscope detected after 6 seconds');
                         console.log('🔍 Device info:', {
                             userAgent: navigator.userAgent,
                             platform: navigator.platform,
-                            vendor: navigator.vendor
+                            vendor: navigator.vendor,
+                            cookieEnabled: navigator.cookieEnabled,
+                            onLine: navigator.onLine,
+                            language: navigator.language
                         });
+                        console.log('🌐 Window location:', window.location.protocol, window.location.host);
+                        console.log('📱 Screen info:', {
+                            width: screen.width,
+                            height: screen.height,
+                            orientation: screen.orientation ? screen.orientation.type : 'unknown'
+                        });
+                        
                         window.removeEventListener('deviceorientation', regularTest);
                         window.removeEventListener('deviceorientationabsolute', absoluteTest);
                         window.removeEventListener('devicemotion', motionTest);
@@ -412,78 +484,4 @@
                 this.gyroHandler = (event) => {
                     // Always log the first few events to debug
                     if (!this.baseGamma && !this.baseBeta) {
-                        console.log('🎯 Game gyro event (before baseline):', {
-                            gamma: event.gamma,
-                            beta: event.beta,
-                            gameStarted: this.gameStarted,
-                            gameRunning: this.gameRunning
-                        });
-                    }
-                    
-                    if (!this.gameStarted) {
-                        console.log('⏸️ Game not started yet, ignoring gyro event');
-                        return;
-                    }
-                    
-                    // Set baseline on first reading after game starts
-                    if (this.baseGamma === null || this.baseBeta === null) {
-                        this.baseGamma = event.gamma || 0;
-                        this.baseBeta = event.beta || 0;
-                        console.log('🎯 Game baseline set:', {
-                            baseGamma: this.baseGamma,
-                            baseBeta: this.baseBeta
-                        });
-                        document.getElementById('gyroState').textContent = `Gyroscope Active (γ:${this.baseGamma.toFixed(1)}° β:${this.baseBeta.toFixed(1)}°)`;
-                        return;
-                    }
-                    
-                    if (this.gameRunning) {
-                        this.handleGyroscope(event);
-                    }
-                };
-                
-                window.addEventListener('deviceorientation', this.gyroHandler);
-                console.log('✅ Game gyroscope handler added');
-            }
-
-            handleGyroscope(event) {
-                if (!this.gyroEnabled || event.gamma === null || event.beta === null) {
-                    console.log('⚠️ Gyro handler called but conditions not met:', {
-                        gyroEnabled: this.gyroEnabled,
-                        gamma: event.gamma,
-                        beta: event.beta
-                    });
-                    return;
-                }
-                if (this.baseGamma === null || this.baseBeta === null) {
-                    console.log('⚠️ Baseline not set yet');
-                    return;
-                }
-                
-                // Calculate tilt relative to baseline
-                const deltaGamma = (event.gamma - this.baseGamma) * this.gyroSensitivity;
-                const deltaBeta = (event.beta - this.baseBeta) * this.gyroSensitivity;
-                
-                // Convert to game coordinates with limits
-                const newTargetX = Math.max(-15, Math.min(15, deltaGamma));
-                const newTargetY = Math.max(-10, Math.min(10, -deltaBeta)); // Inverted for natural feel
-                
-                // Only update if there's a meaningful change
-                if (Math.abs(newTargetX - this.targetX) > 0.1 || Math.abs(newTargetY - this.targetY) > 0.1) {
-                    this.targetX = newTargetX;
-                    this.targetY = newTargetY;
-                    
-                    // Log every movement for debugging
-                    console.log(`🎮 Gyro movement: γ${event.gamma.toFixed(1)}° β${event.beta.toFixed(1)}° → target(${this.targetX.toFixed(1)}, ${this.targetY.toFixed(1)}) | player(${this.playerOrb.position.x.toFixed(1)}, ${this.playerOrb.position.y.toFixed(1)})`);
-                }
-            }
-
-            startWithoutGyro() {
-                console.log('Starting without gyroscope');
-                document.getElementById('gyroState').textContent = 'Touch Controls Active';
-                document.getElementById('instructions').textContent = 'Touch and drag to move your orb • Avoid the floating obstacles';
-                this.startGame();
-            }
-
-            startGame() {
-                console.log('Starti
+                      
