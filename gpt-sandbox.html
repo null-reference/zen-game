@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Zen Orb - Floating Meditation</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            overflow: hidden;
+            font-family: 'Arial', sans-serif;
+            touch-action: none;
+        }
+
+        #gameContainer {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+        }
+
+        #ui {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            z-index: 100;
+            color: white;
+            font-size: 18px;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.5);
+        }
+
+        #instructions {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 100;
+            color: rgba(255,255,255,0.8);
+            text-align: center;
+            font-size: 14px;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.5);
+        }
+
+        #gameOver, #startScreen {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 100;
+            color: white;
+            text-align: center;
+            background: rgba(0,0,0,0.7);
+            padding: 30px;
+            border-radius: 15px;
+            backdrop-filter: blur(10px);
+            display: none;
+        }
+
+        #startScreen {
+            display: block;
+        }
+
+        #restartBtn, #startBtn {
+            background: linear-gradient(45deg, #667eea, #764ba2);
+            border: none;
+            color: white;
+            padding: 12px 24px;
+            border-radius: 25px;
+            font-size: 16px;
+            cursor: pointer;
+            margin-top: 15px;
+            transition: transform 0.2s;
+        }
+
+        #restartBtn:hover, #startBtn:hover {
+            transform: scale(1.05);
+        }
+
+        #gyroStatus {
+            position: absolute;
+            top: 60px;
+            left: 20px;
+            z-index: 100;
+            color: rgba(255,255,255,0.7);
+            font-size: 12px;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.5);
+        }
+
+        canvas {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <div id="gameContainer">
+        <div id="ui">
+            <div>Score: <span id="score">0</span></div>
+            <div>Time: <span id="time">0</span>s</div>
+        </div>
+        
+        <div id="gyroStatus">Gyroscope: <span id="gyroState">Inactive</span></div>
+        
+        <div id="instructions">
+            Tilt your device to move your orb • Avoid the floating obstacles
+        </div>
+
+        <div id="startScreen">
+            <h2>Zen Orb</h2>
+            <p>Hold your device comfortably</p>
+            <p>This position will be your center</p>
+            <button id="startBtn">Begin Meditation</button>
+        </div>
+
+        <div id="gameOver">
+            <h2>Meditation Complete</h2>
+            <p>Final Score: <span id="finalScore">0</span></p>
+            <p>Time Survived: <span id="finalTime">0</span>s</p>
+            <button id="restartBtn">Begin Again</button>
+        </div>
+    </div>
+
+    <script>
+        class ZenOrbGame {
+            constructor() {
+                this.scene = null;
+                this.camera = null;
+                this.renderer = null;
+                this.playerOrb = null;
+                this.obstacles = [];
+                this.particles = [];
+                
+                this.score = 0;
+                this.gameTime = 0;
+                this.gameRunning = false;
+                this.gameStarted = false;
+                this.lastTime = 0;
+                
+                // Control variables
+                this.mouseX = 0;
+                this.mouseY = 0;
+                this.targetX = 0;
+                this.targetY = 0;
+                
+                // Gyroscope variables
+                this.gyroEnabled = false;
+                this.baseGamma = 0; // Left-right tilt baseline
+                this.baseBeta = 0;  // Front-back tilt baseline
+                this.gyroSensitivity = 0.3;
+                
+                this.init();
+                this.createPlayer();
+                this.createParticles();
+                this.setupControls();
+                this.animate();
+            }
+
+            init() {
+                // Scene
+                this.scene = new THREE.Scene();
+                this.scene.fog = new THREE.Fog(0x667eea, 20, 100);
+                
+                // Camera
+                this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+                this.camera.position.z = 30;
+                
+                // Renderer
+                this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+                this.renderer.setSize(window.innerWidth, window.innerHeight);
+                this.renderer.setClearColor(0x667eea, 0.1);
+                this.renderer.shadowMap.enabled = true;
+                this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+                document.getElementById('gameContainer').appendChild(this.renderer.domElement);
+                
+                // Lighting
+                const ambientLight = new THREE.AmbientLight(0x404040, 0.6);
+                this.scene.add(ambientLight);
+                
+                const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+                directionalLight.position.set(10, 10, 5);
+                directionalLight.castShadow = true;
+                this.scene.add(directionalLight);
+                
+                // Resize handler
+                window.addEventListener('resize', () => this.onWindowResize());
+            }
+
+            createPlayer() {
+                const geometry = new THREE.SphereGeometry(0.8, 32, 32);
+                const material = new THREE.MeshPhongMaterial({
+                    color: 0x00ff88,
+                    emissive: 0x002211,
+                    shininess: 100,
+                    transparent: true,
+                    opacity: 0.9
+                });
+                
+                this.playerOrb = new THREE.Mesh(geometry, material);
+                this.playerOrb.position.set(0, -8, 0);
+                this.playerOrb.castShadow = true;
+                this.scene.add(this.playerOrb);
+                
+                // Add glow effect
+                const glowGeometry = new THREE.SphereGeometry(1.2, 16, 16);
+                const glowMaterial = new THREE.MeshBasicMaterial({
+                    color: 0x00ff88,
+                    transparent: true,
+                    opacity: 0.3
+                });
+                const glow = new THREE.Mesh(glowGeometry, glowMaterial);
+                this.playerOrb.add(glow);
+            }
+
+            createParticles() {
+                const particleCount = 200;
+                const geometry = new THREE.BufferGeometry();
+                const positions = new Float32Array(particleCount * 3);
+                const colors = new Float32Array(particleCount * 3);
+                
+                for (let i = 0; i < particleCount; i++) {
+                    positions[i * 3] = (Math.random() - 0.5) * 100;
+                    positions[i * 3 + 1] = (Math.random() - 0.5) * 100;
+                    positions[i * 3 + 2] = (Math.random() - 0.5) * 100;
+                    
+                    colors[i * 3] = Math.random() * 0.5 + 0.5;
+                    colors[i * 3 + 1] = Math.random() * 0.5 + 0.5;
+                    colors[i * 3 + 2] = 1;
+                }
+                
+                geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+                geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+                
+                const material = new THREE.PointsMaterial({
+                    size: 0.5,
+                    vertexColors: true,
+                    transparent: true,
+                    opacity: 0.6
+                });
+                
+                const particles = new THREE.Points(geometry, material);
+                this.scene.add(particles);
+                this.backgroundParticles = particles;
+            }
+
+            setupControls() {
+                // Start button
+                document.getElementById('startBtn').addEventListener('click', () => {
+                    this.requestMotionAccess();
+                });
+                
+                // Touch controls (fallback)
+                this.renderer.domElement.addEventListener('touchstart', (e) => {
+                    if (!this.gameStarted) return;
+                    e.preventDefault();
+                    const touch = e.touches[0];
+                    this.updateMousePosition(touch.clientX, touch.clientY);
+                });
+                
+                this.renderer.domElement.addEventListener('touchmove', (e) => {
+                    if (!this.gameStarted) return;
+                    e.preventDefault();
+                    const touch = e.touches[0];
+                    this.updateMousePosition(touch.clientX, touch.clientY);
+                });
+                
+                // Mouse controls for desktop (fallback)
+                this.renderer.domElement.addEventListener('mousemove', (e) => {
+                    if (!this.gameStarted) return;
+                    this.updateMousePosition(e.clientX, e.clientY);
+                });
+                
+                // Restart button
+                document.getElementById('restartBtn').addEventListener('click', () => {
+                    this.restart();
+                });
+            }
+
+            async requestMotionAccess() {
+                try {
+                    // Check if we need to request permission (iOS 13+)
+                    if (typeof DeviceOrientationEvent.requestPermission === 'function') {
+                        const permission = await DeviceOrientationEvent.requestPermission();
+                        if (permission === 'granted') {
+                            this.setupGyroscope();
+                        } else {
+                            this.startWithoutGyro();
+                        }
+                    } else {
+                        // Android or older iOS
+                        this.setupGyroscope();
+                    }
+                } catch (error) {
+                    console.log('Motion access error:', error);
+                    this.startWithoutGyro();
+                }
+            }
+
+            setupGyroscope() {
+                // Wait a moment for the user to get into position
+                setTimeout(() => {
+                    window.addEventListener('deviceorientation', (event) => {
+                        if (!this.gameStarted) {
+                            // Set baseline when game starts
+                            this.baseGamma = event.gamma || 0;
+                            this.baseBeta = event.beta || 0;
+                            this.startGame();
+                            return;
+                        }
+                        
+                        if (this.gameRunning) {
+                            this.handleGyroscope(event);
+                        }
+                    });
+                    
+                    // Test if gyroscope is working
+                    let testCount = 0;
+                    const testHandler = (event) => {
+                        testCount++;
+                        if (testCount > 3 && (event.gamma !== null || event.beta !== null)) {
+                            this.gyroEnabled = true;
+                            document.getElementById('gyroState').textContent = 'Active';
+                            window.removeEventListener('deviceorientation', testHandler);
+                        } else if (testCount > 10) {
+                            this.startWithoutGyro();
+                            window.removeEventListener('deviceorientation', testHandler);
+                        }
+                    };
+                    
+                    window.addEventListener('deviceorientation', testHandler);
+                }, 500);
+            }
+
+            handleGyroscope(event) {
+                if (!this.gyroEnabled || !event.gamma || !event.beta) return;
+                
+                // Calculate tilt relative to baseline
+                const deltaGamma = (event.gamma - this.baseGamma) * this.gyroSensitivity;
+                const deltaBeta = (event.beta - this.baseBeta) * this.gyroSensitivity;
+                
+                // Convert to game coordinates
+                this.targetX = Math.max(-15, Math.min(15, deltaGamma));
+                this.targetY = Math.max(-10, Math.min(10, -deltaBeta)); // Inverted for natural feel
+            }
+
+            startWithoutGyro() {
+                document.getElementById('gyroState').textContent = 'Unavailable - Touch Controls';
+                document.getElementById('instructions').textContent = 'Touch and drag to move your orb • Avoid the floating obstacles';
+                this.startGame();
+            }
+
+            startGame() {
+                this.gameStarted = true;
+                this.gameRunning = true;
+                document.getElementById('startScreen').style.display = 'none';
+                this.spawnObstacles();
+            }
+
+            updateMousePosition(clientX, clientY) {
+                this.mouseX = (clientX / window.innerWidth) * 2 - 1;
+                this.mouseY = -(clientY / window.innerHeight) * 2 + 1;
+                
+                this.targetX = this.mouseX * 15;
+                this.targetY = this.mouseY * 10;
+            }
+
+            spawnObstacles() {
+                if (!this.gameRunning) return;
+                
+                const geometry = new THREE.SphereGeometry(Math.random() * 1.5 + 0.5, 16, 16);
+                const hue = Math.random();
+                const color = new THREE.Color().setHSL(hue, 0.7, 0.6);
+                
+                const material = new THREE.MeshPhongMaterial({
+                    color: color,
+                    emissive: color.clone().multiplyScalar(0.2),
+                    transparent: true,
+                    opacity: 0.8
+                });
+                
+                const obstacle = new THREE.Mesh(geometry, material);
+                
+                // Random spawn position
+                const side = Math.floor(Math.random() * 4);
+                switch(side) {
+                    case 0: // Top
+                        obstacle.position.set((Math.random() - 0.5) * 30, 15, 0);
+                        obstacle.velocity = new THREE.Vector3(0, -2 - Math.random() * 2, 0);
+                        break;
+                    case 1: // Bottom
+                        obstacle.position.set((Math.random() - 0.5) * 30, -15, 0);
+                        obstacle.velocity = new THREE.Vector3(0, 2 + Math.random() * 2, 0);
+                        break;
+                    case 2: // Left
+                        obstacle.position.set(-20, (Math.random() - 0.5) * 20, 0);
+                        obstacle.velocity = new THREE.Vector3(2 + Math.random() * 2, 0, 0);
+                        break;
+                    case 3: // Right
+                        obstacle.position.set(20, (Math.random() - 0.5) * 20, 0);
+                        obstacle.velocity = new THREE.Vector3(-2 - Math.random() * 2, 0, 0);
+                        break;
+                }
+                
+                obstacle.rotationSpeed = new THREE.Vector3(
+                    (Math.random() - 0.5) * 0.1,
+                    (Math.random() - 0.5) * 0.1,
+                    (Math.random() - 0.5) * 0.1
+                );
+                
+                this.obstacles.push(obstacle);
+                this.scene.add(obstacle);
+                
+                // Schedule next spawn
+                setTimeout(() => this.spawnObstacles(), 1000 + Math.random() * 2000);
+            }
+
+            checkCollisions() {
+                const playerPos = this.playerOrb.position;
+                
+                for (let i = this.obstacles.length - 1; i >= 0; i--) {
+                    const obstacle = this.obstacles[i];
+                    const distance = playerPos.distanceTo(obstacle.position);
+                    
+                    if (distance < 1.5) {
+                        this.gameOver();
+                        return;
+                    }
+                }
+            }
+
+            updateObstacles(deltaTime) {
+                for (let i = this.obstacles.length - 1; i >= 0; i--) {
+                    const obstacle = this.obstacles[i];
+                    
+                    // Move obstacle
+                    obstacle.position.add(obstacle.velocity.clone().multiplyScalar(deltaTime));
+                    
+                    // Rotate obstacle
+                    obstacle.rotation.x += obstacle.rotationSpeed.x;
+                    obstacle.rotation.y += obstacle.rotationSpeed.y;
+                    obstacle.rotation.z += obstacle.rotationSpeed.z;
+                    
+                    // Remove if too far
+                    if (Math.abs(obstacle.position.x) > 25 || Math.abs(obstacle.position.y) > 20) {
+                        this.scene.remove(obstacle);
+                        this.obstacles.splice(i, 1);
+                        this.score += 10;
+                    }
+                }
+            }
+
+            updatePlayer(deltaTime) {
+                // Smooth movement towards target
+                const lerpFactor = 1 - Math.exp(-8 * deltaTime);
+                this.playerOrb.position.x = THREE.MathUtils.lerp(this.playerOrb.position.x, this.targetX, lerpFactor);
+                this.playerOrb.position.y = THREE.MathUtils.lerp(this.playerOrb.position.y, this.targetY, lerpFactor);
+                
+                // Gentle rotation
+                this.playerOrb.rotation.x += 0.01;
+                this.playerOrb.rotation.y += 0.02;
+                
+                // Pulsing glow effect
+                const glow = this.playerOrb.children[0];
+                if (glow) {
+                    glow.material.opacity = 0.3 + 0.2 * Math.sin(this.gameTime * 3);
+                }
+            }
+
+            updateUI() {
+                document.getElementById('score').textContent = this.score;
+                document.getElementById('time').textContent = Math.floor(this.gameTime);
+            }
+
+            gameOver() {
+                this.gameRunning = false;
+                document.getElementById('finalScore').textContent = this.score;
+                document.getElementById('finalTime').textContent = Math.floor(this.gameTime);
+                document.getElementById('gameOver').style.display = 'block';
+            }
+
+            restart() {
+                // Reset game state
+                this.gameRunning = true;
+                this.score = 0;
+                this.gameTime = 0;
+                this.targetX = 0;
+                this.targetY = 0;
+                
+                // Reset player position
+                this.playerOrb.position.set(0, -8, 0);
+                
+                // Remove all obstacles
+                this.obstacles.forEach(obstacle => this.scene.remove(obstacle));
+                this.obstacles = [];
+                
+                // Hide game over screen
+                document.getElementById('gameOver').style.display = 'none';
+                
+                // If gyroscope is enabled, recalibrate
+                if (this.gyroEnabled) {
+                    // Brief delay to let user get into position
+                    setTimeout(() => {
+                        /
