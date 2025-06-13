@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Zen Wave</title>
+  <style>
+    html, body {
+      margin: 0;
+      overflow: hidden;
+      background: #000;
+      touch-action: none;
+    }
+    canvas {
+      display: block;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="c"></canvas>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r134/three.min.js"></script>
+  <script>
+    const renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('c'), antialias: true });
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
+    camera.position.set(0, 5, 10);
+
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(window.devicePixelRatio);
+
+    const ambient = new THREE.AmbientLight(0xffffff, 0.5);
+    scene.add(ambient);
+    const point = new THREE.PointLight(0xffffff, 1);
+    point.position.set(0, 10, 5);
+    scene.add(point);
+
+    const size = 10;
+    const segments = 60;
+    const geometry = new THREE.PlaneGeometry(size, size, segments, segments);
+    geometry.rotateX(-Math.PI / 2);
+
+    const colors = new Float32Array((segments + 1) * (segments + 1) * 3);
+    geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+    const material = new THREE.MeshStandardMaterial({ side: THREE.DoubleSide, vertexColors: true, transparent: true, opacity: 0.9 });
+    const mesh = new THREE.Mesh(geometry, material);
+    scene.add(mesh);
+
+    const pos = geometry.attributes.position.array;
+    const original = pos.slice();
+    const vel = new Float32Array((segments + 1) * (segments + 1)).fill(0);
+
+    const k = 0.02;
+    const spread = 0.2;
+    const damping = 0.95;
+
+    const pointer = new THREE.Vector2();
+    const raycaster = new THREE.Raycaster();
+    let pointerDown = false;
+
+    function onPointer(e) {
+      pointer.x = (e.clientX / window.innerWidth) * 2 - 1;
+      pointer.y = -(e.clientY / window.innerHeight) * 2 + 1;
+    }
+
+    function applyForce() {
+      raycaster.setFromCamera(pointer, camera);
+      const hit = raycaster.intersectObject(mesh);
+      if (!hit.length) return;
+      const p = hit[0].point;
+      for (let i = 0; i < pos.length; i += 3) {
+        const dx = pos[i] - p.x;
+        const dz = pos[i + 2] - p.z;
+        const dist = Math.sqrt(dx * dx + dz * dz);
+        if (dist < 1) {
+          const idx = i / 3;
+          vel[idx] -= (1 - dist) * 0.5;
+        }
+      }
+    }
+
+    window.addEventListener('pointerdown', e => { pointerDown = true; onPointer(e); applyForce(); });
+    window.addEventListener('pointermove', e => { onPointer(e); if (pointerDown) applyForce(); });
+    window.addEventListener('pointerup', () => { pointerDown = false; });
+
+    window.addEventListener('resize', () => {
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+    });
+
+    const idx = (x, y) => y * (segments + 1) + x;
+
+    function simulate() {
+      for (let x = 0; x <= segments; x++) {
+        for (let y = 0; y <= segments; y++) {
+          const id = idx(x, y);
+          let force = (original[id * 3 + 1] - pos[id * 3 + 1]) * k;
+          if (x > 0) force += (pos[idx(x - 1, y) * 3 + 1] - pos[id * 3 + 1]) * spread;
+          if (x < segments) force += (pos[idx(x + 1, y) * 3 + 1] - pos[id * 3 + 1]) * spread;
+          if (y > 0) force += (pos[idx(x, y - 1) * 3 + 1] - pos[id * 3 + 1]) * spread;
+          if (y < segments) force += (pos[idx(x, y + 1) * 3 + 1] - pos[id * 3 + 1]) * spread;
+          vel[id] += force;
+          vel[id] *= damping;
+        }
+      }
+      for (let i = 0; i < vel.length; i++) {
+        pos[i * 3 + 1] += vel[i];
+      }
+      geometry.attributes.position.needsUpdate = true;
+      geometry.computeVertexNormals();
+    }
+
+    function updateColors(time) {
+      const colorAttr = geometry.attributes.color;
+      for (let i = 0; i < colorAttr.count; i++) {
+        const x = pos[i * 3];
+        const z = pos[i * 3 + 2];
+        const r = 0.5 + 0.5 * Math.sin(time * 0.001 + x * 0.3);
+        const g = 0.5 + 0.5 * Math.sin(time * 0.001 + z * 0.3 + 2);
+        const b = 0.5 + 0.5 * Math.sin(time * 0.001 + (x + z) * 0.3 + 4);
+        colorAttr.setXYZ(i, r, g, b);
+      }
+      colorAttr.needsUpdate = true;
+    }
+
+    function animate(time) {
+      requestAnimationFrame(animate);
+      simulate();
+      updateColors(time);
+      renderer.render(scene, camera);
+    }
+    animate();
+  </script>
+</body>
+</html>

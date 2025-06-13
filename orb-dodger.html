@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Orb Dodger</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: #000;
+            font-family: Arial, sans-serif;
+        }
+        canvas {
+            display: block;
+            cursor: none;
+        }
+        #ui {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            color: white;
+            font-size: 20px;
+            text-shadow: 0 0 10px rgba(255,255,255,0.5);
+            pointer-events: none;
+        }
+        #gameOver {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            text-align: center;
+            display: none;
+        }
+        #gameOver h1 {
+            font-size: 48px;
+            margin: 20px 0;
+            text-shadow: 0 0 20px rgba(255,0,0,0.8);
+        }
+        #gameOver button {
+            font-size: 24px;
+            padding: 10px 30px;
+            background: #ff00ff;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        #gameOver button:hover {
+            background: #ff44ff;
+            transform: scale(1.1);
+        }
+        #instructions {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: white;
+            font-size: 16px;
+            text-align: center;
+            text-shadow: 0 0 5px rgba(255,255,255,0.5);
+        }
+    </style>
+</head>
+<body>
+    <div id="ui">
+        <div>Score: <span id="score">0</span></div>
+        <div>High Score: <span id="highScore">0</span></div>
+    </div>
+    <div id="gameOver">
+        <h1>Game Over!</h1>
+        <p>Final Score: <span id="finalScore">0</span></p>
+        <button onclick="resetGame()">Play Again</button>
+    </div>
+    <div id="instructions">Move mouse or touch to control your orb • Avoid all enemies!</div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        // Game state
+        let score = 0;
+        let highScore = 0;
+        let gameActive = true;
+        let enemySpeed = 0.1;
+        let enemySpawnRate = 2000;
+        let lastSpawnTime = 0;
+
+        // Scene setup
+        const scene = new THREE.Scene();
+        scene.fog = new THREE.Fog(0x000000, 10, 100);
+        
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.enabled = true;
+        document.body.appendChild(renderer.domElement);
+
+        // Lighting
+        const ambientLight = new THREE.AmbientLight(0x404040);
+        scene.add(ambientLight);
+        
+        const pointLight = new THREE.PointLight(0xffffff, 1, 100);
+        pointLight.position.set(0, 20, 0);
+        pointLight.castShadow = true;
+        scene.add(pointLight);
+
+        // Camera position
+        camera.position.set(0, 15, 30);
+        camera.lookAt(0, 0, 0);
+
+        // Player orb
+        const playerGeometry = new THREE.SphereGeometry(1, 32, 32);
+        const playerMaterial = new THREE.MeshPhongMaterial({
+            color: 0x00ff00,
+            emissive: 0x00ff00,
+            emissiveIntensity: 0.3,
+            shininess: 100
+        });
+        const player = new THREE.Mesh(playerGeometry, playerMaterial);
+        player.castShadow = true;
+        player.receiveShadow = true;
+        scene.add(player);
+
+        // Player glow effect
+        const glowGeometry = new THREE.SphereGeometry(1.5, 32, 32);
+        const glowMaterial = new THREE.MeshBasicMaterial({
+            color: 0x00ff00,
+            transparent: true,
+            opacity: 0.3
+        });
+        const playerGlow = new THREE.Mesh(glowGeometry, glowMaterial);
+        player.add(playerGlow);
+
+        // Enemy array
+        const enemies = [];
+
+        // Create enemy
+        function createEnemy() {
+            const size = Math.random() * 1.5 + 0.5;
+            const geometry = new THREE.SphereGeometry(size, 16, 16);
+            const color = new THREE.Color().setHSL(Math.random(), 1, 0.5);
+            const material = new THREE.MeshPhongMaterial({
+                color: color,
+                emissive: color,
+                emissiveIntensity: 0.2
+            });
+            
+            const enemy = new THREE.Mesh(geometry, material);
+            enemy.castShadow = true;
+            enemy.receiveShadow = true;
+            
+            // Random spawn position (from edges)
+            const side = Math.floor(Math.random() * 4);
+            switch(side) {
+                case 0: // top
+                    enemy.position.set((Math.random() - 0.5) * 40, 0, -30);
+                    break;
+                case 1: // right
+                    enemy.position.set(30, 0, (Math.random() - 0.5) * 40);
+                    break;
+                case 2: // bottom
+                    enemy.position.set((Math.random() - 0.5) * 40, 0, 30);
+                    break;
+                case 3: // left
+                    enemy.position.set(-30, 0, (Math.random() - 0.5) * 40);
+                    break;
+            }
+            
+            // Random velocity towards center area
+            const targetX = (Math.random() - 0.5) * 20;
+            const targetZ = (Math.random() - 0.5) * 20;
+            const direction = new THREE.Vector3(
+                targetX - enemy.position.x,
+                0,
+                targetZ - enemy.position.z
+            ).normalize();
+            
+            enemy.velocity = direction.multiplyScalar(enemySpeed);
+            enemy.radius = size;
+            
+            enemies.push(enemy);
+            scene.add(enemy);
+        }
+
+        // Particle explosion effect
+        function createExplosion(position) {
+            const particleCount = 30;
+            const geometry = new THREE.BufferGeometry();
+            const positions = new Float32Array(particleCount * 3);
+            const velocities = [];
+            
+            for (let i = 0; i < particleCount; i++) {
+                positions[i * 3] = position.x;
+                positions[i * 3 + 1] = position.y;
+                positions[i * 3 + 2] = position.z;
+                
+                velocities.push(new THREE.Vector3(
+                    (Math.random() - 0.5) * 0.5,
+                    Math.random() * 0.3,
+                    (Math.random() - 0.5) * 0.5
+                ));
+            }
+            
+            geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            
+            const material = new THREE.PointsMaterial({
+                color: 0xff0000,
+                size: 0.5,
+                transparent: true,
+                opacity: 1
+            });
+            
+            const particles = new THREE.Points(geometry, material);
+            scene.add(particles);
+            
+            // Animate explosion
+            let frame = 0;
+            const animateExplosion = () => {
+                frame++;
+                const positions = particles.geometry.attributes.position;
+                
+                for (let i = 0; i < particleCount; i++) {
+                    positions.array[i * 3] += velocities[i].x;
+                    positions.array[i * 3 + 1] += velocities[i].y;
+                    positions.array[i * 3 + 2] += velocities[i].z;
+                    velocities[i].y -= 0.01; // gravity
+                }
+                
+                positions.needsUpdate = true;
+                particles.material.opacity = 1 - frame / 60;
+                
+                if (frame < 60) {
+                    requestAnimationFrame(animateExplosion);
+                } else {
+                    scene.remove(particles);
+                }
+            };
+            animateExplosion();
+        }
+
+        // Ground plane
+        const groundGeometry = new THREE.PlaneGeometry(100, 100);
+        const groundMaterial = new THREE.MeshPhongMaterial({ 
+            color: 0x111111,
+            emissive: 0x000033,
+            emissiveIntensity: 0.1
+        });
+        const ground = new THREE.Mesh(groundGeometry, groundMaterial);
+        ground.rotation.x = -Math.PI / 2;
+        ground.position.y = -2;
+        ground.receiveShadow = true;
+        scene.add(ground);
+
+        // Mouse/Touch tracking
+        let mouseX = 0, mouseZ = 0;
+
+        function onPointerMove(event) {
+            const x = event.clientX || (event.touches && event.touches[0].clientX) || 0;
+            const y = event.clientY || (event.touches && event.touches[0].clientY) || 0;
+            
+            mouseX = (x / window.innerWidth - 0.5) * 40;
+            mouseZ = (y / window.innerHeight - 0.5) * 40;
+        }
+
+        // Event listeners
+        renderer.domElement.addEventListener('mousemove', onPointerMove);
+        renderer.domElement.addEventListener('touchmove', onPointerMove);
+
+        // Window resize
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        // Collision detection
+        function checkCollisions() {
+            if (!gameActive) return;
+            
+            const playerPos = player.position;
+            
+            for (let enemy of enemies) {
+                const distance = playerPos.distanceTo(enemy.position);
+                if (distance < 1 + enemy.radius) {
+                    // Game over
+                    gameActive = false;
+                    createExplosion(playerPos);
+                    document.getElementById('finalScore').textContent = score;
+                    document.getElementById('gameOver').style.display = 'block';
+                    
+                    if (score > highScore) {
+                        highScore = score;
+                        document.getElementById('highScore').textContent = highScore;
+                    }
+                }
+            }
+        }
+
+        // Update game difficulty
+        function updateDifficulty() {
+            enemySpeed = 0.1 + score * 0.005;
+            enemySpawnRate = Math.max(500, 2000 - score * 50);
+        }
+
+        // Reset game
+        function resetGame() {
+            gameActive = true;
+            score = 0;
+            enemySpeed = 0.1;
+            enemySpawnRate = 2000;
+            
+            // Clear enemies
+            enemies.forEach(enemy => scene.remove(enemy));
+            enemies.length = 0;
+            
+            // Reset player position
+            player.position.set(0, 0, 0);
+            
+            // Hide game over screen
+            document.getElementById('gameOver').style.display = 'none';
+            document.getElementById('score').textContent = '0';
+        }
+
+        // Animation loop
+        let time = 0;
+        function animate() {
+            requestAnimationFrame(animate);
+            time += 0.016;
+            
+            if (gameActive) {
+                // Update score
+                score = Math.floor(time * 10);
+                document.getElementById('score').textContent = score;
+                updateDifficulty();
+                
+                // Move player smoothly towards mouse
+                player.position.x += (mouseX - player.position.x) * 0.1;
+                player.position.z += (mouseZ - player.position.z) * 0.1;
+                
+                // Player hover animation
+                player.position.y = Math.sin(time * 2) * 0.2;
+                player.rotation.y += 0.02;
+                
+                // Spawn enemies
+                if (Date.now() - lastSpawnTime > enemySpawnRate) {
+                    createEnemy();
+                    lastSpawnTime = Date.now();
+                }
+                
+                // Update enemies
+                for (let i = enemies.length - 1; i >= 0; i--) {
+                    const enemy = enemies[i];
+                    enemy.position.add(enemy.velocity);
+                    enemy.rotation.x += 0.02;
+                    enemy.rotation.y += 0.03;
+                    
+                    // Remove off-screen enemies
+                    if (Math.abs(enemy.position.x) > 40 || Math.abs(enemy.position.z) > 40) {
+                        scene.remove(enemy);
+                        enemies.splice(i, 1);
+                    }
+                }
+                
+                // Check collisions
+                checkCollisions();
+                
+                // Update player glow
+                playerGlow.scale.set(
+                    1 + Math.sin(time * 3) * 0.1,
+                    1 + Math.sin(time * 3) * 0.1,
+                    1 + Math.sin(time * 3) * 0.1
+                );
+            }
+            
+            // Camera slight movement
+            camera.position.x = Math.sin(time * 0.1) * 2;
+            camera.position.z = 30 + Math.cos(time * 0.1) * 2;
+            camera.lookAt(player.position);
+            
+            renderer.render(scene, camera);
+        }
+        
+        // Start game
+        animate();
+        
+        // Initial enemy spawn
+        setTimeout(() => createEnemy(), 1000);
+    </script>
+</body>
+</html>
