@@ -6,7 +6,6 @@ This repository hosts a collection of small browser games that can be served dir
 
 - `index.html` provides a simple landing page linking to each game.
 - Individual game files (`*.html`) reside at the repository root.
-- The `codex/` folder contains prebuilt files from a Vite/React project.
 - The `_archive/` directory stores historical experiments and earlier versions of the games.
 
 No tests or build commands are required. Deployment is currently handled by GitHub Pages.
