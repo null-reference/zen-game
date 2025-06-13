@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Coin Collector</title>
+  <style>
+    canvas { background:#222; display:block; margin:0 auto; }
+    body { text-align:center; background:#111; color:#fff; margin:0; }
+    h1 { font-family: monospace; margin:10px 0; }
+  </style>
+</head>
+<body>
+  <h1>Coin Collector</h1>
+  <canvas id="game" width="400" height="400"></canvas>
+  <script>
+    const canvas=document.getElementById('game');
+    const ctx=canvas.getContext('2d');
+    const player={x:200,y:200,size:20};
+    const coin={x:Math.random()*380+10,y:Math.random()*380+10,size:10};
+    let score=0;
+    document.addEventListener('keydown',e=>{
+      const s=5;
+      if(e.key==='ArrowUp')player.y-=s;
+      if(e.key==='ArrowDown')player.y+=s;
+      if(e.key==='ArrowLeft')player.x-=s;
+      if(e.key==='ArrowRight')player.x+=s;
+    });
+    function loop(){
+      ctx.fillStyle='#222';
+      ctx.fillRect(0,0,400,400);
+      ctx.fillStyle='#0f0';
+      ctx.fillRect(player.x-10,player.y-10,player.size,player.size);
+      ctx.fillStyle='#ff0';
+      ctx.beginPath();
+      ctx.arc(coin.x,coin.y,coin.size,0,Math.PI*2);ctx.fill();
+      const dx=player.x-coin.x,dy=player.y-coin.y;
+      if(Math.hypot(dx,dy)<player.size/2+coin.size){
+        score++;coin.x=Math.random()*380+10;coin.y=Math.random()*380+10;
+      }
+      ctx.fillStyle='#fff';
+      ctx.fillText('Score: '+score,10,20);
+      requestAnimationFrame(loop);
+    }
+    loop();
+  </script>
+</body>
+</html>

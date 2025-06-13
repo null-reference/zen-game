@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Paddle Ball</title>
+  <style>
+    canvas { background:#000; display:block; margin:0 auto; }
+    body { text-align:center; background:#111; color:#fff; margin:0; }
+    h1 { font-family: monospace; margin:10px 0; }
+  </style>
+</head>
+<body>
+  <h1>Paddle Ball</h1>
+  <canvas id="game" width="400" height="400"></canvas>
+  <script>
+    const c=document.getElementById('game');
+    const ctx=c.getContext('2d');
+    const paddle={x:170,y:380,w:60,h:10};
+    const ball={x:200,y:200,r:8,vx:3,vy:-3};
+    document.addEventListener('mousemove',e=>{
+      const rect=c.getBoundingClientRect();
+      paddle.x=e.clientX-rect.left-paddle.w/2;
+    });
+    function loop(){
+      ctx.fillStyle='#000';ctx.fillRect(0,0,400,400);
+      ctx.fillStyle='#fff';ctx.fillRect(paddle.x,paddle.y,paddle.w,paddle.h);
+      ball.x+=ball.vx;ball.y+=ball.vy;
+      if(ball.x<ball.r||ball.x>400-ball.r)ball.vx*=-1;
+      if(ball.y<ball.r)ball.vy*=-1;
+      if(ball.y>paddle.y-ball.r&&ball.x>paddle.x&&ball.x<paddle.x+paddle.w){
+        ball.vy*=-1;ball.y=paddle.y-ball.r;
+      }
+      if(ball.y>400-ball.r){ball.x=200;ball.y=200;}
+      ctx.beginPath();ctx.arc(ball.x,ball.y,ball.r,0,Math.PI*2);ctx.fill();
+      requestAnimationFrame(loop);
+    }
+    loop();
+  </script>
+</body>
+</html>
