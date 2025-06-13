@@ -1,0 +1,587 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Gyro Dodge Endless</title>
+  <style>
+    html, body {
+      margin: 0;
+      overflow: hidden;
+      background: linear-gradient(to bottom, #1a1a2e, #16213e);
+      font-family: 'Press Start 2P', cursive;
+      color: white;
+    }
+    canvas {
+      display: block;
+      filter: drop-shadow(0 0 8px rgba(255, 255, 255, 0.5));
+    }
+    #permission {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: rgba(0, 0, 0, 0.7);
+      color: white;
+      padding: 25px 40px;
+      border-radius: 15px;
+      text-align: center;
+      box-shadow: 0 0 20px rgba(0, 255, 255, 0.6);
+      border: 2px solid cyan;
+      font-size: 1.2em;
+      z-index: 10;
+    }
+    #permission button {
+      background: #00bcd4;
+      color: white;
+      border: none;
+      padding: 12px 25px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 1em;
+      margin-top: 20px;
+      transition: background 0.3s ease, transform 0.2s ease;
+    }
+    #permission button:hover {
+      background: #0097a7;
+      transform: scale(1.05);
+    }
+    #gameStats {
+      position: absolute;
+      top: 20px;
+      left: 20px;
+      background: none;
+      box-shadow: none;
+      border: none;
+      padding: 0;
+      text-align: left;
+      font-size: 1em;
+      z-index: 5;
+    }
+    #gameStats span {
+      display: block;
+      margin-bottom: 5px;
+    }
+  </style>
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+</head>
+<body>
+<canvas id="canvas"></canvas>
+<div id="permission">
+  <h2>Gyro Dodge</h2>
+  <p>Tap to enable motion sensors and start dodging!</p>
+  <button id="startButton">Start Game</button>
+</div>
+<div id="gameStats">
+  <span id="timeDisplay">Time: 0s</span>
+  <span id="collisionDisplay">Collisions: 0</span>
+</div>
+
+<script>
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
+
+let targetTiltX = 0;
+let targetTiltY = 0;
+let tiltX = 0;
+let tiltY = 0;
+
+let initialGamma = 0;
+let initialBeta = 0;
+let hasBaseline = false;
+
+let player = {
+  x: canvas.width / 2,
+  y: canvas.height / 2,
+  radius: 14,
+  color: "#00e676",
+  speedMultiplier: 0.7,
+  invulnerable: false,
+  invulnerabilityTimer: 0
+};
+
+let collisionCount = 0;
+let startTime = 0;
+let gameRunning = false;
+let animationFrameId;
+
+// Enhanced collision system variables
+let screenShake = { x: 0, y: 0, intensity: 0, duration: 0 };
+let particles = [];
+let impactWaves = [];
+let collisionHeat = 0;
+
+const obstacleBaseSpeed = 1;
+const obstacleCount = 25;
+let obstacles = [];
+
+const timeDisplay = document.getElementById("timeDisplay");
+const collisionDisplay = document.getElementById("collisionDisplay");
+const permissionScreen = document.getElementById("permission");
+const startButton = document.getElementById("startButton");
+
+// Impact wave effect for dramatic collisions
+class ImpactWave {
+  constructor(x, y, maxRadius = 80) {
+    this.x = x;
+    this.y = y;
+    this.radius = 0;
+    this.maxRadius = maxRadius;
+    this.thickness = 8;
+    this.opacity = 1;
+    this.speed = 4;
+  }
+
+  update() {
+    this.radius += this.speed;
+    this.opacity = 1 - (this.radius / this.maxRadius);
+    this.thickness = 8 * this.opacity;
+  }
+
+  draw() {
+    if (this.opacity <= 0) return;
+    
+    ctx.save();
+    ctx.globalAlpha = this.opacity;
+    ctx.strokeStyle = `rgba(255, 100, 100, ${this.opacity})`;
+    ctx.lineWidth = this.thickness;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+    ctx.stroke();
+    
+    // Inner glow
+    ctx.strokeStyle = `rgba(255, 255, 255, ${this.opacity * 0.5})`;
+    ctx.lineWidth = this.thickness * 0.3;
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  isDead() {
+    return this.radius >= this.maxRadius;
+  }
+}
+class Particle {
+  constructor(x, y, color) {
+    this.x = x;
+    this.y = y;
+    this.vx = (Math.random() - 0.5) * 12;
+    this.vy = (Math.random() - 0.5) * 12;
+    this.life = 1.0;
+    this.decay = 0.02 + Math.random() * 0.03;
+    this.size = 2 + Math.random() * 4;
+    this.color = color;
+    this.gravity = 0.1;
+  }
+
+  update() {
+    this.x += this.vx;
+    this.y += this.vy;
+    this.vy += this.gravity;
+    this.vx *= 0.98;
+    this.vy *= 0.98;
+    this.life -= this.decay;
+    this.size *= 0.98;
+  }
+
+  draw() {
+    ctx.save();
+    ctx.globalAlpha = this.life;
+    ctx.fillStyle = this.color;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+}
+
+// Create explosion particles with different types
+function createExplosion(x, y, color, intensity = 1) {
+  const sparkCount = Math.floor(10 * intensity);
+  const debrisCount = Math.floor(5 * intensity);
+  
+  // Create sparks
+  for (let i = 0; i < sparkCount; i++) {
+    particles.push(new Particle(x, y, color, 'spark'));
+  }
+  
+  // Create debris
+  for (let i = 0; i < debrisCount; i++) {
+    particles.push(new Particle(x, y, color, 'debris'));
+  }
+  
+  // Create impact wave
+  impactWaves.push(new ImpactWave(x, y, 60 + intensity * 20));
+}
+
+// Screen shake with different intensities and patterns
+function addScreenShake(intensity, duration, pattern = 'random') {
+  screenShake.intensity = Math.max(screenShake.intensity, intensity);
+  screenShake.duration = Math.max(screenShake.duration, duration);
+  screenShake.pattern = pattern;
+}
+
+function updateScreenShake() {
+  if (screenShake.duration > 0) {
+    const factor = screenShake.duration / 20; // Fade out shake
+    
+    if (screenShake.pattern === 'horizontal') {
+      screenShake.x = (Math.random() - 0.5) * screenShake.intensity * factor;
+      screenShake.y = 0;
+    } else if (screenShake.pattern === 'vertical') {
+      screenShake.x = 0;
+      screenShake.y = (Math.random() - 0.5) * screenShake.intensity * factor;
+    } else {
+      screenShake.x = (Math.random() - 0.5) * screenShake.intensity * factor;
+      screenShake.y = (Math.random() - 0.5) * screenShake.intensity * factor;
+    }
+    
+    screenShake.duration--;
+    screenShake.intensity *= 0.95;
+  } else {
+    screenShake.x = 0;
+    screenShake.y = 0;
+  }
+}
+
+// Collision heat system for escalating intensity
+function updateCollisionHeat() {
+  if (collisionHeat > 0) {
+    collisionHeat -= 0.5; // Cool down gradually
+  }
+}
+
+// Game Initialization
+function initializeGame() {
+  player.x = canvas.width / 2;
+  player.y = canvas.height / 2;
+  player.invulnerable = false;
+  player.invulnerabilityTimer = 0;
+  collisionCount = 0;
+  collisionHeat = 0;
+  startTime = Date.now();
+  gameRunning = true;
+  hasBaseline = false;
+  particles = [];
+  impactWaves = [];
+  screenShake = { x: 0, y: 0, intensity: 0, duration: 0 };
+  
+  obstacles = Array.from({ length: obstacleCount }).map(() => ({
+    x: Math.random() * canvas.width,
+    y: Math.random() * canvas.height,
+    r: 10 + Math.random() * 10,
+    dx: (Math.random() - 0.5) * obstacleBaseSpeed * 2,
+    dy: (Math.random() - 0.5) * obstacleBaseSpeed * 2,
+    color: `hsl(${Math.random() * 360}, 80%, 70%)`,
+    wasColliding: false,
+    collisionEffect: false,
+    effectTimer: 0,
+    hitCount: 0,
+    scale: 1
+  }));
+
+  permissionScreen.style.display = "none";
+  timeDisplay.textContent = `Time: 0s`;
+  collisionDisplay.textContent = `Collisions: 0`;
+
+  if (animationFrameId) {
+    cancelAnimationFrame(animationFrameId);
+  }
+  loop();
+}
+
+// Motion Permission
+function enableMotion() {
+  if (typeof DeviceOrientationEvent.requestPermission === "function") {
+    DeviceOrientationEvent.requestPermission().then(response => {
+      if (response === "granted") {
+        window.addEventListener("deviceorientation", handleTilt, true);
+        initializeGame();
+      } else {
+        alert("Motion sensor permission denied. Game cannot start.");
+      }
+    }).catch(error => {
+      console.error("DeviceOrientationEvent.requestPermission failed:", error);
+      alert("Error requesting motion sensor permission.");
+    });
+  } else {
+    window.addEventListener("deviceorientation", handleTilt, true);
+    initializeGame();
+  }
+}
+
+startButton.addEventListener("click", enableMotion);
+
+// Tilt Handling
+function handleTilt(e) {
+  if (!hasBaseline) {
+    initialGamma = e.gamma || 0;
+    initialBeta = e.beta || 0;
+    hasBaseline = true;
+  }
+
+  const rawTargetTiltX = ((e.gamma || 0) - initialGamma);
+  const rawTargetTiltY = ((e.beta || 0) - initialBeta);
+
+  const deadzone = 1;
+  targetTiltX = Math.abs(rawTargetTiltX) > deadzone ? rawTargetTiltX : 0;
+  targetTiltY = Math.abs(rawTargetTiltY) > deadzone ? rawTargetTiltY : 0;
+}
+
+// Collision Detection
+function checkCollision(p, o) {
+  const dx = p.x - o.x;
+  const dy = p.y - o.y;
+  const distance = Math.sqrt(dx * dx + dy * dy);
+  return distance < p.radius + o.r;
+}
+
+// Game Logic Update
+function update() {
+  if (!gameRunning) return;
+
+  // Update player invulnerability
+  if (player.invulnerabilityTimer > 0) {
+    player.invulnerabilityTimer--;
+    if (player.invulnerabilityTimer <= 0) {
+      player.invulnerable = false;
+      player.color = "#00e676";
+    }
+  }
+
+  // Smooth player movement
+  tiltX += (targetTiltX - tiltX) * 0.15;
+  tiltY += (targetTiltY - tiltY) * 0.15;
+
+  player.x += tiltX * player.speedMultiplier;
+  player.y += tiltY * player.speedMultiplier;
+
+  // Keep player within bounds with bounce effect
+  if (player.x < player.radius) {
+    player.x = player.radius;
+    tiltX = -tiltX * 0.5;
+  }
+  if (player.x > canvas.width - player.radius) {
+    player.x = canvas.width - player.radius;
+    tiltX = -tiltX * 0.5;
+  }
+  if (player.y < player.radius) {
+    player.y = player.radius;
+    tiltY = -tiltY * 0.5;
+  }
+  if (player.y > canvas.height - player.radius) {
+    player.y = canvas.height - player.radius;
+    tiltY = -tiltY * 0.5;
+  }
+
+  // Update obstacles and collision detection
+  for (let o of obstacles) {
+    o.x += o.dx;
+    o.y += o.dy;
+
+    // Obstacle boundary collision with bounce
+    if (o.x < o.r || o.x > canvas.width - o.r) o.dx *= -1;
+    if (o.y < o.r || o.y > canvas.height - o.r) o.dy *= -1;
+
+    // Update obstacle scale animation
+    o.scale += (1 - o.scale) * 0.1;
+
+    const isColliding = checkCollision(player, o);
+    if (isColliding && !player.invulnerable) {
+      if (!o.wasColliding) {
+        // MASSIVE COLLISION IMPACT!
+        collisionCount++;
+        collisionHeat += 15; // Build up collision intensity
+        
+        // Determine collision intensity based on speed and heat
+        const relativeSpeed = Math.sqrt((o.dx - tiltX)**2 + (o.dy - tiltY)**2);
+        const intensity = Math.min(1 + (relativeSpeed * 0.3) + (collisionHeat * 0.02), 4);
+        
+        // Create dramatic explosion effects
+        createExplosion(o.x, o.y, o.color, intensity);
+        createExplosion(player.x, player.y, player.color, intensity * 0.8);
+        
+        // Variable screen shake patterns
+        let shakePattern = 'random';
+        if (intensity > 2) shakePattern = Math.random() > 0.5 ? 'horizontal' : 'vertical';
+        addScreenShake(4 + intensity * 2, 20 + intensity * 5, shakePattern);
+        
+        // Advanced obstacle effects
+        o.collisionEffect = true;
+        o.effectTimer = 60 + intensity * 10;
+        o.hitCount++;
+        o.scale = 1.2 + intensity * 0.1;
+        
+        // Player dramatic feedback
+        player.color = intensity > 2 ? "#ff0000" : "#ff4444";
+        player.invulnerable = true;
+        player.invulnerabilityTimer = 45; // Longer invulnerability for bigger hits
+        
+        // Obstacle evolution with visual changes
+        if (o.hitCount >= 2) {
+          const hue = Math.max(0, 60 - o.hitCount * 15); // Red shift
+          o.color = `hsl(${hue}, 100%, ${50 + Math.min(o.hitCount * 5, 30)}%)`;
+          o.dx *= 1.15;
+          o.dy *= 1.15;
+        }
+        
+        // Dynamic knockback based on collision angle and intensity
+        const angle = Math.atan2(player.y - o.y, player.x - o.x);
+        const knockbackForce = 4 + intensity * 2;
+        player.x += Math.cos(angle) * knockbackForce;
+        player.y += Math.sin(angle) * knockbackForce;
+        
+        // Obstacle dramatic rebound with spin effect
+        o.dx += Math.cos(angle + Math.PI) * (2 + intensity);
+        o.dy += Math.sin(angle + Math.PI) * (2 + intensity);
+        
+        // Add obstacle rotation for visual flair
+        o.rotation = (o.rotation || 0) + (Math.random() - 0.5) * 0.4;
+      }
+    }
+    o.wasColliding = isColliding;
+
+    // Update collision effect timer
+    if (o.collisionEffect) {
+      o.effectTimer--;
+      if (o.effectTimer <= 0) {
+        o.collisionEffect = false;
+      }
+    }
+  }
+
+  // Update particles and impact waves
+  particles = particles.filter(p => {
+    p.update();
+    return p.life > 0;
+  });
+  
+  impactWaves = impactWaves.filter(wave => {
+    wave.update();
+    return !wave.isDead();
+  });
+
+  // Update screen shake and collision systems
+  updateScreenShake();
+  updateCollisionHeat();
+
+  // Update stats display
+  timeDisplay.textContent = `Time: ${Math.floor((Date.now() - startTime) / 1000)}s`;
+  collisionDisplay.textContent = `Collisions: ${collisionCount}`;
+}
+
+// Drawing
+function draw() {
+  // Apply screen shake
+  ctx.save();
+  ctx.translate(screenShake.x, screenShake.y);
+  
+  ctx.clearRect(-screenShake.x, -screenShake.y, canvas.width + Math.abs(screenShake.x) * 2, canvas.height + Math.abs(screenShake.y) * 2);
+
+  // Draw obstacles with enhanced effects
+  for (let o of obstacles) {
+    ctx.save();
+    ctx.translate(o.x, o.y);
+    ctx.scale(o.scale, o.scale);
+    
+    // Add rotation if obstacle has been hit
+    if (o.rotation) {
+      ctx.rotate(o.rotation);
+      o.rotation *= 0.95; // Slow down rotation
+    }
+    
+    ctx.beginPath();
+    if (o.collisionEffect) {
+      // Multi-layered flashing effect
+      const flashIntensity = Math.sin(o.effectTimer * 0.3);
+      const flash = flashIntensity > 0;
+      
+      if (flash) {
+        // Outer white glow
+        ctx.fillStyle = "white";
+        ctx.shadowBlur = 25;
+        ctx.shadowColor = "white";
+        ctx.arc(0, 0, o.r + 2, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Inner color core
+        ctx.fillStyle = o.color;
+        ctx.shadowBlur = 15;
+        ctx.shadowColor = o.color;
+        ctx.arc(0, 0, o.r, 0, Math.PI * 2);
+        ctx.fill();
+      } else {
+        ctx.fillStyle = o.color;
+        ctx.shadowBlur = 12;
+        ctx.shadowColor = o.color;
+        ctx.arc(0, 0, o.r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    } else {
+      ctx.fillStyle = o.color;
+      ctx.shadowBlur = 8;
+      ctx.shadowColor = o.color;
+      ctx.arc(0, 0, o.r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.shadowBlur = 0;
+    ctx.restore();
+  }
+
+  // Draw impact waves
+  impactWaves.forEach(wave => wave.draw());
+
+  // Draw particles
+  particles.forEach(p => p.draw());
+
+  // Draw player with enhanced invulnerability effect
+  if (!player.invulnerable || Math.floor(Date.now() / 80) % 2) {
+    ctx.beginPath();
+    ctx.fillStyle = player.color;
+    ctx.arc(player.x, player.y, player.radius, 0, Math.PI * 2);
+    
+    // Enhanced glow based on collision heat
+    const glowIntensity = 15 + Math.min(collisionHeat * 0.5, 20);
+    ctx.shadowBlur = glowIntensity;
+    ctx.shadowColor = player.color;
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    
+    // Add danger indicator when collision heat is high
+    if (collisionHeat > 50) {
+      ctx.strokeStyle = "rgba(255, 0, 0, 0.6)";
+      ctx.lineWidth = 3;
+      ctx.setLineDash([5, 5]);
+      ctx.beginPath();
+      ctx.arc(player.x, player.y, player.radius + 8, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+  }
+
+  ctx.restore(); // Restore screen shake transform
+}
+
+// Game Loop
+function loop() {
+  update();
+  draw();
+  animationFrameId = requestAnimationFrame(loop);
+}
+
+// Initial state
+permissionScreen.style.display = "block";
+
+// Handle window resizing
+window.addEventListener('resize', () => {
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+  if (gameRunning) {
+    player.x = canvas.width / 2;
+    player.y = canvas.height / 2;
+  }
+});
+</script>
+</body>
+</html>
