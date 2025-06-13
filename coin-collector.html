@@ -5,28 +5,81 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Coin Collector</title>
   <style>
-    canvas { background:#222; display:block; margin:0 auto; }
+    canvas {
+      background:#222;
+      display:block;
+      margin:0 auto;
+      width:90vmin;
+      height:90vmin;
+      touch-action:none;
+    }
     body { text-align:center; background:#111; color:#fff; margin:0; }
     h1 { font-family: monospace; margin:10px 0; }
+    .controls { display:none; }
+    @media (pointer:coarse) {
+      .controls {
+        position:fixed;
+        bottom:10px;
+        left:50%;
+        transform:translateX(-50%);
+        display:flex;
+        flex-direction:column;
+        align-items:center;
+      }
+      .controls button {
+        width:60px;
+        height:60px;
+        font-size:2rem;
+        margin:5px;
+      }
+      .controls .row { display:flex; }
+    }
   </style>
 </head>
 <body>
   <h1>Coin Collector</h1>
   <canvas id="game" width="400" height="400"></canvas>
+  <div class="controls">
+    <div class="row"><button id="up">▲</button></div>
+    <div class="row">
+      <button id="left">◀</button>
+      <button id="right">▶</button>
+    </div>
+    <div class="row"><button id="down">▼</button></div>
+  </div>
   <script>
     const canvas=document.getElementById('game');
     const ctx=canvas.getContext('2d');
     const player={x:200,y:200,size:20};
     const coin={x:Math.random()*380+10,y:Math.random()*380+10,size:10};
     let score=0;
+    const dir={up:false,down:false,left:false,right:false};
     document.addEventListener('keydown',e=>{
-      const s=5;
-      if(e.key==='ArrowUp')player.y-=s;
-      if(e.key==='ArrowDown')player.y+=s;
-      if(e.key==='ArrowLeft')player.x-=s;
-      if(e.key==='ArrowRight')player.x+=s;
+      if(e.key==='ArrowUp')dir.up=true;
+      if(e.key==='ArrowDown')dir.down=true;
+      if(e.key==='ArrowLeft')dir.left=true;
+      if(e.key==='ArrowRight')dir.right=true;
+    });
+    document.addEventListener('keyup',e=>{
+      if(e.key==='ArrowUp')dir.up=false;
+      if(e.key==='ArrowDown')dir.down=false;
+      if(e.key==='ArrowLeft')dir.left=false;
+      if(e.key==='ArrowRight')dir.right=false;
+    });
+    ['up','down','left','right'].forEach(k=>{
+      const b=document.getElementById(k);
+      if(b){
+        b.addEventListener('pointerdown',e=>{e.preventDefault();dir[k]=true;});
+        b.addEventListener('pointerup',e=>{e.preventDefault();dir[k]=false;});
+        b.addEventListener('pointerleave',()=>{dir[k]=false;});
+      }
     });
     function loop(){
+      const s=5;
+      if(dir.up)player.y-=s;
+      if(dir.down)player.y+=s;
+      if(dir.left)player.x-=s;
+      if(dir.right)player.x+=s;
       ctx.fillStyle='#222';
       ctx.fillRect(0,0,400,400);
       ctx.fillStyle='#0f0';
