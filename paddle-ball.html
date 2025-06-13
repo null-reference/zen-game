@@ -5,24 +5,70 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Paddle Ball</title>
   <style>
-    canvas { background:#000; display:block; margin:0 auto; }
+    canvas {
+      background:#000;
+      display:block;
+      margin:0 auto;
+      width:90vmin;
+      height:90vmin;
+      touch-action:none;
+    }
     body { text-align:center; background:#111; color:#fff; margin:0; }
     h1 { font-family: monospace; margin:10px 0; }
+    .controls { display:none; }
+    @media (pointer:coarse) {
+      .controls {
+        display:flex;
+        justify-content:center;
+        gap:20px;
+        margin-top:10px;
+      }
+      .controls button {
+        width:60px;
+        height:60px;
+        font-size:2rem;
+      }
+    }
   </style>
 </head>
 <body>
   <h1>Paddle Ball</h1>
   <canvas id="game" width="400" height="400"></canvas>
+  <div class="controls">
+    <button id="left">◀</button>
+    <button id="right">▶</button>
+  </div>
   <script>
     const c=document.getElementById('game');
     const ctx=c.getContext('2d');
     const paddle={x:170,y:380,w:60,h:10};
     const ball={x:200,y:200,r:8,vx:3,vy:-3};
-    document.addEventListener('mousemove',e=>{
+    const dir={left:false,right:false};
+    c.addEventListener('pointermove',e=>{
       const rect=c.getBoundingClientRect();
       paddle.x=e.clientX-rect.left-paddle.w/2;
+      e.preventDefault();
+    });
+    document.addEventListener('keydown',e=>{
+      if(e.key==='ArrowLeft')dir.left=true;
+      if(e.key==='ArrowRight')dir.right=true;
+    });
+    document.addEventListener('keyup',e=>{
+      if(e.key==='ArrowLeft')dir.left=false;
+      if(e.key==='ArrowRight')dir.right=false;
+    });
+    ['left','right'].forEach(k=>{
+      const b=document.getElementById(k);
+      if(b){
+        b.addEventListener('pointerdown',e=>{e.preventDefault();dir[k]=true;});
+        b.addEventListener('pointerup',e=>{e.preventDefault();dir[k]=false;});
+        b.addEventListener('pointerleave',()=>{dir[k]=false;});
+      }
     });
     function loop(){
+      const s=5;
+      if(dir.left)paddle.x-=s;
+      if(dir.right)paddle.x+=s;
       ctx.fillStyle='#000';ctx.fillRect(0,0,400,400);
       ctx.fillStyle='#fff';ctx.fillRect(paddle.x,paddle.y,paddle.w,paddle.h);
       ball.x+=ball.vx;ball.y+=ball.vy;
