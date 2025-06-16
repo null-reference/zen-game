@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Raining Rocks</title>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      background: #000;
+    }
+    canvas {
+      display: block;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="game"></canvas>
+  <script>
+    const canvas = document.getElementById('game');
+    const ctx = canvas.getContext('2d');
+
+    function resize() {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    }
+    window.addEventListener('resize', resize);
+    resize();
+
+    const rocks = [];
+    const gravity = 0.15; // acceleration
+
+    class Rock {
+      constructor(x, y, vy) {
+        this.x = x;
+        this.y = y;
+        this.vy = vy;
+        this.size = Math.random() * 10 + 5;
+      }
+
+      update() {
+        this.vy += gravity;
+        this.y += this.vy;
+      }
+
+      draw() {
+        ctx.fillStyle = '#888';
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    let spawnTimer = 0;
+    const spawnInterval = 500; // ms
+
+    function spawnRock() {
+      const x = Math.random() * canvas.width;
+      const vy = Math.random() * 2; // initial speed
+      rocks.push(new Rock(x, -20, vy));
+    }
+
+    function update(dt) {
+      spawnTimer += dt;
+      if (spawnTimer >= spawnInterval) {
+        spawnTimer = 0;
+        spawnRock();
+      }
+      for (let i = rocks.length - 1; i >= 0; i--) {
+        const rock = rocks[i];
+        rock.update();
+        if (rock.y - rock.size > canvas.height) {
+          rocks.splice(i, 1);
+        }
+      }
+    }
+
+    let lastTime = performance.now();
+    function loop(now) {
+      const dt = now - lastTime;
+      lastTime = now;
+
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      update(dt);
+      rocks.forEach(r => r.draw());
+
+      requestAnimationFrame(loop);
+    }
+    requestAnimationFrame(loop);
+  </script>
+</body>
+</html>
